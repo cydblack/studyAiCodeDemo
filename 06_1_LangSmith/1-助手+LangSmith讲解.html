@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LangSmith 混合财富顾问 · 代码讲解</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+    const LIGHT_TEXT = "#ffffff";
+    const DARK_TEXT = "#1a2430";
+
+    function parseCssColor(value) {
+      if (!value || value === "none" || value === "transparent") return null;
+      const v = String(value).trim();
+      if (v.startsWith("#")) {
+        let hex = v.slice(1);
+        if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+        if (hex.length === 8) hex = hex.slice(0, 6);
+        if (hex.length !== 6) return null;
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+      const m = v.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+      if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+      return null;
+    }
+
+    function relativeLuminance({ r, g, b }) {
+      const toLinear = (c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    }
+
+    function textColorForBg(bg) {
+      // 浅色背景用深字，深色背景用浅字
+      return relativeLuminance(bg) > 0.42 ? DARK_TEXT : LIGHT_TEXT;
+    }
+
+    function shapeFill(shape) {
+      if (!shape) return null;
+      return parseCssColor(
+        shape.getAttribute("fill") ||
+        shape.style.fill ||
+        getComputedStyle(shape).fill
+      );
+    }
+
+    function findBackgroundColor(el, diagramRoot) {
+      // 1) 时序图 Note / label 浅色框（优先，避免误用深色图底）
+      const noteOrLabel = el.closest("g.note, g.label, .note, .activation0, .activation1, .activation2");
+      if (noteOrLabel) {
+        const rect = noteOrLabel.querySelector("rect");
+        const c = shapeFill(rect);
+        if (c) return c;
+      }
+
+      // 2) flowchart / state 节点
+      const nodeG = el.closest("g.node, g.actor, g.cluster");
+      if (nodeG) {
+        const shape = nodeG.querySelector(
+          ":scope > rect, :scope > polygon, :scope > circle, :scope > ellipse, :scope > path"
+        );
+        const c = shapeFill(shape);
+        if (c) return c;
+        if (nodeG.classList.contains("cluster")) {
+          const c2 = shapeFill(nodeG.querySelector("rect"));
+          if (c2) return c2;
+        }
+      }
+
+      // 3) 边标签背景
+      const edgeLabel = el.closest("g.edgeLabel");
+      if (edgeLabel) {
+        const c = shapeFill(edgeLabel.querySelector("rect"));
+        if (c) return c;
+      }
+
+      // 4) 沿父级向上找最近的实心 rect（覆盖 Mermaid 各种分组结构）
+      let cur = el.parentElement;
+      while (cur && cur !== diagramRoot) {
+        if (cur.tagName === "g") {
+          for (const shape of cur.querySelectorAll(":scope > rect")) {
+            const fillAttr = shape.getAttribute("fill");
+            if (!fillAttr || fillAttr === "none") continue;
+            const c = parseCssColor(fillAttr);
+            if (c) return c;
+          }
+        }
+        cur = cur.parentElement;
+      }
+
+      // 5) 图容器底色
+      const diagramBox = diagramRoot.closest(".diagram");
+      if (diagramBox) {
+        const bg = parseCssColor(getComputedStyle(diagramBox).backgroundColor);
+        if (bg) return bg;
+      }
+      return { r: 22, g: 32, b: 42 };
+    }
+
+    function applyTextColor(el, color) {
+      if (el instanceof SVGElement) {
+        el.setAttribute("fill", color);
+        el.style.fill = color;
+      }
+      el.style.setProperty("color", color, "important");
+    }
+
+    function adaptMermaidTextContrast() {
+      document.querySelectorAll(".diagram .mermaid").forEach((root) => {
+        root.querySelectorAll(
+          "text, tspan, .nodeLabel, .edgeLabel, .label, .cluster-label, .messageText, .noteText, .actor, .loopText, foreignObject div, foreignObject span, foreignObject p"
+        ).forEach((el) => {
+          if (el.closest(".caption")) return;
+          const color = textColorForBg(findBackgroundColor(el, root));
+          applyTextColor(el, color);
+          // foreignObject 内子节点同步
+          if (el.tagName?.toLowerCase() === "div" || el.tagName?.toLowerCase() === "span") {
+            el.querySelectorAll("*").forEach((child) => applyTextColor(child, color));
+          }
+        });
+
+        // 额外：浅色 Note / Label 框内全部文字强制深色（工具层时序图常见问题）
+        root.querySelectorAll("g.note, g.label").forEach((g) => {
+          const rect = g.querySelector("rect");
+          const bg = shapeFill(rect);
+          if (!bg) return;
+          const color = textColorForBg(bg);
+          g.querySelectorAll("text, tspan, foreignObject, foreignObject *").forEach((t) => {
+            applyTextColor(t, color);
+          });
+        });
+      });
+    }
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#1e3a4a",
+        primaryTextColor: "#ffffff",
+        primaryBorderColor: "#3d6a7a",
+        mainBkg: "#1e3a4a",
+        nodeBorder: "#3d6a7a",
+        // 次级/集群/标签/Note 一律深色底 + 浅色字，避免浅色方块配白字
+        secondaryColor: "#243848",
+        secondaryTextColor: "#ffffff",
+        tertiaryColor: "#2a4050",
+        tertiaryTextColor: "#ffffff",
+        clusterBkg: "#1a303c",
+        clusterBorder: "#4a7080",
+        titleColor: "#ffffff",
+        lineColor: "#8fadc0",
+        textColor: "#ffffff",
+        edgeLabelBackground: "#1e3a4a",
+        actorBkg: "#1e3a4a",
+        actorBorder: "#3d6a7a",
+        actorTextColor: "#ffffff",
+        actorLineColor: "#8fadc0",
+        signalColor: "#c5d8e2",
+        signalTextColor: "#ffffff",
+        labelBoxBkgColor: "#243848",
+        labelBoxBorderColor: "#4a7080",
+        labelTextColor: "#ffffff",
+        loopTextColor: "#ffffff",
+        noteBkgColor: "#243848",
+        noteTextColor: "#ffffff",
+        noteBorderColor: "#4a7080",
+        activationBkgColor: "#2a4a5a",
+        activationBorderColor: "#3d6a7a",
+        sequenceNumberColor: "#ffffff",
+        background: "#162028",
+        fontFamily: "IBM Plex Sans, sans-serif"
+      },
+      flowchart: { curve: "basis", padding: 18 },
+      sequence: {
+        actorMargin: 48,
+        messageMargin: 36,
+        noteMargin: 12,
+        mirrorActors: false,
+        useMaxWidth: true
+      }
+    });
+
+    function enhanceDiagramSourceView() {
+      // 渲染前保存 Mermaid 源码，并给每张图加「查看源代码」按钮
+      document.querySelectorAll(".diagram").forEach((box) => {
+        const mermaidEl = box.querySelector(".mermaid");
+        if (!mermaidEl || box.querySelector(".diagram-toolbar")) return;
+
+        const source = (mermaidEl.textContent || "").trim();
+        if (!source) return;
+
+        const toolbar = document.createElement("div");
+        toolbar.className = "diagram-toolbar";
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "diagram-src-btn";
+        toggleBtn.textContent = "查看源代码";
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "diagram-copy-btn";
+        copyBtn.textContent = "复制";
+        copyBtn.hidden = true;
+
+        toolbar.appendChild(toggleBtn);
+        toolbar.appendChild(copyBtn);
+
+        const sourcePanel = document.createElement("pre");
+        sourcePanel.className = "diagram-source";
+        sourcePanel.hidden = true;
+        sourcePanel.textContent = source;
+
+        box.insertBefore(toolbar, box.firstChild);
+        const caption = box.querySelector(".caption");
+        if (caption) box.insertBefore(sourcePanel, caption);
+        else box.appendChild(sourcePanel);
+
+        toggleBtn.addEventListener("click", () => {
+          const willShow = sourcePanel.hidden;
+          sourcePanel.hidden = !willShow;
+          copyBtn.hidden = !willShow;
+          toggleBtn.textContent = willShow ? "收起源代码" : "查看源代码";
+          toggleBtn.setAttribute("aria-expanded", willShow ? "true" : "false");
+        });
+
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(source);
+            copyBtn.textContent = "已复制";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          } catch {
+            copyBtn.textContent = "复制失败";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          }
+        });
+      });
+    }
+
+    enhanceDiagramSourceView();
+    await mermaid.run({ querySelector: ".mermaid" });
+    adaptMermaidTextContrast();
+    requestAnimationFrame(adaptMermaidTextContrast);
+    setTimeout(adaptMermaidTextContrast, 200);
+    setTimeout(adaptMermaidTextContrast, 600);
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --bg-deep: #e5e0d4;
+      --ink: #1a2430;
+      --ink-muted: #4a5868;
+      --accent: #2a6a7a;
+      --accent-soft: #d5e8ee;
+      --line: #c5bdb0;
+      --card: #faf8f3;
+      --code-bg: #1a2830;
+      --code-fg: #d5e4ea;
+      --warn: #8a4b1f;
+      --diagram-bg: #162028;
+      --reactive: #2a6a7a;
+      --deliberative: #6a5a3a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 70% 45% at 0% 0%, #d5e8ee 0%, transparent 55%),
+        radial-gradient(ellipse 50% 35% at 100% 5%, #e8dfd0 0%, transparent 50%),
+        var(--bg);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    header.hero {
+      margin-bottom: 2.5rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    header.hero .brand {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(2rem, 5vw, 2.7rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    header.hero .lede {
+      color: var(--ink-muted);
+      max-width: 42em;
+      font-size: 1.05rem;
+    }
+
+    header.hero .meta {
+      margin-top: 1.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    header.hero .meta span {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+    }
+
+    nav.toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.75rem;
+    }
+
+    nav.toc h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-muted);
+      margin-bottom: 0.7rem;
+    }
+
+    nav.toc ol {
+      padding-left: 1.25rem;
+      columns: 2;
+      gap: 1.5rem;
+    }
+
+    nav.toc a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.94rem;
+    }
+
+    nav.toc a:hover {
+      text-decoration: underline;
+    }
+
+    section {
+      margin-bottom: 3.25rem;
+    }
+
+    section>h2 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      padding-bottom: 0.45rem;
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+
+    section>h3 {
+      font-size: 1.08rem;
+      font-weight: 600;
+      margin: 1.6rem 0 0.7rem;
+    }
+
+    p {
+      margin-bottom: 0.95rem;
+    }
+
+    p.muted {
+      color: var(--ink-muted);
+    }
+
+    ul,
+    ol {
+      margin: 0 0 1rem 1.3rem;
+    }
+
+    li {
+      margin-bottom: 0.3rem;
+    }
+
+    .diagram {
+      background: var(--diagram-bg);
+      border: 1px solid #2a3a45;
+      padding: 1.4rem 1rem;
+      margin: 1.2rem 0 1.6rem;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .diagram-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .diagram-src-btn,
+    .diagram-copy-btn {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      padding: 0.28rem 0.65rem;
+      border: 1px solid #4a7080;
+      background: #1e3a4a;
+      color: #e8f2f6;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    .diagram-src-btn:hover,
+    .diagram-copy-btn:hover {
+      background: #2a4a5a;
+    }
+
+    .diagram-source {
+      display: block;
+      margin: 0 0 0.85rem;
+      padding: 0.9rem 1rem;
+      background: #0f181e;
+      border: 1px solid #2a3a45;
+      border-left: 3px solid #5a9aaa;
+      color: #d5e4ea;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 22rem;
+      overflow: auto;
+    }
+
+    .diagram-source[hidden] {
+      display: none !important;
+    }
+
+    .diagram .caption {
+      font-size: 0.78rem;
+      color: #9bb5c0 !important;
+      text-align: center;
+      margin-top: 0.7rem;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    /* 图内统一深色块 + 浅色字；不再给 Note/Label 强制深色字 */
+    .diagram .mermaid g.note>rect,
+    .diagram .mermaid g.label>rect,
+    .diagram .mermaid .edgeLabel>rect,
+    .diagram .mermaid g.cluster>rect {
+      fill: #243848 !important;
+      stroke: #4a7080 !important;
+    }
+
+    .diagram .mermaid g.note text,
+    .diagram .mermaid g.note tspan,
+    .diagram .mermaid g.note foreignObject,
+    .diagram .mermaid g.note foreignObject *,
+    .diagram .mermaid .noteText,
+    .diagram .mermaid g.label text,
+    .diagram .mermaid g.label tspan,
+    .diagram .mermaid g.label foreignObject,
+    .diagram .mermaid g.label foreignObject *,
+    .diagram .mermaid g.actor text,
+    .diagram .mermaid g.actor tspan,
+    .diagram .mermaid .actor,
+    .diagram .mermaid .cluster-label,
+    .diagram .mermaid .edgeLabel,
+    .diagram .mermaid .nodeLabel,
+    .diagram .mermaid text,
+    .diagram .mermaid tspan {
+      fill: #ffffff !important;
+      color: #ffffff !important;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.4rem;
+      font-size: 0.9rem;
+      background: var(--card);
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 0.6rem 0.8rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--bg-deep);
+      font-weight: 600;
+      font-size: 0.84rem;
+    }
+
+    code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.86em;
+      background: var(--accent-soft);
+      padding: 0.08em 0.32em;
+      border-radius: 2px;
+      color: var(--accent);
+    }
+
+    .code-block {
+      margin: 1rem 0 1.4rem;
+    }
+
+    .code-block .code-label {
+      display: inline-block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.74rem;
+      color: #9bb5c0;
+      background: #121c24;
+      padding: 0.32rem 0.7rem;
+      border: 1px solid #2a3a45;
+      border-bottom: none;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      border-left: 3px solid var(--accent);
+      border-top: 1px solid #2a3a45;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      padding: 0.95rem 1.1rem;
+      margin: 1.15rem 0;
+      font-size: 0.95rem;
+    }
+
+    .callout.warn {
+      background: #f3e6d6;
+      border-left-color: var(--warn);
+    }
+
+    .method-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      margin: 1rem 0 1.35rem;
+      padding: 1.1rem 1.2rem;
+    }
+
+    .method-card h4 {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.98rem;
+      color: var(--accent);
+      margin-bottom: 0.45rem;
+    }
+
+    .method-card .sig {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      margin-bottom: 0.65rem;
+      word-break: break-all;
+    }
+
+    .method-meta {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 0.35rem 0.75rem;
+      font-size: 0.9rem;
+      margin: 0.6rem 0;
+    }
+
+    .method-meta .k {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      padding-top: 0.15rem;
+    }
+
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin: 1.2rem 0;
+    }
+
+    .layer-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--accent);
+      padding: 1rem;
+    }
+
+    .layer-card.delib {
+      border-top-color: var(--deliberative);
+    }
+
+    .layer-card .num {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+    }
+
+    .layer-card.delib .num {
+      color: var(--deliberative);
+    }
+
+    .layer-card h4 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      margin: 0.3rem 0 0.4rem;
+      font-size: 1rem;
+    }
+
+    .layer-card p {
+      font-size: 0.86rem;
+      color: var(--ink-muted);
+      margin: 0;
+    }
+
+    footer {
+      margin-top: 3.5rem;
+      padding-top: 1.3rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.84rem;
+      color: var(--ink-muted);
+    }
+
+
+    .run-step {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      padding: 1rem 1.15rem;
+      margin: 1rem 0 1.35rem;
+    }
+
+    .run-step-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5rem 0.85rem;
+      margin-bottom: 0.55rem;
+    }
+
+    .run-step-badge {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: var(--accent);
+      color: #fff;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+    }
+
+    .run-step-node {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+      color: var(--accent);
+    }
+
+    .run-step-title {
+      font-weight: 600;
+      font-size: 0.98rem;
+    }
+
+    .run-step-desc {
+      font-size: 0.92rem;
+      color: var(--ink-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    @media (max-width: 640px) {
+      nav.toc ol {
+        columns: 1;
+      }
+
+      .method-meta {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .run-step.err {
+      border-left-color: var(--warn);
+    }
+
+    .run-step.ok {
+      border-left-color: #2a7a5a;
+    }
+
+    .ls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      margin: 1.1rem 0;
+    }
+
+    .ls-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 1rem;
+      border-top: 3px solid var(--accent);
+    }
+
+    .ls-card h4 {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.9rem;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+    }
+
+    .ls-card p {
+      font-size: 0.86rem;
+      color: var(--ink-muted);
+      margin: 0;
+    }
+
+    .step-log {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 0.85rem 1rem;
+      margin-top: 0.6rem;
+      white-space: pre-wrap;
+      border-left: 3px solid #5a9aaa;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1 class="brand">LangSmith 混合财富顾问</h1>
+      <p class="lede">
+        讲解 <code>投顾助手+langsmith.py</code>：
+        三层混合架构如何分流，以及 <strong>LangSmith</strong> 如何通过环境变量 +
+        <code>RunnableConfig</code> 自动追踪每次 Agent 运行。
+      </p>
+      <div class="meta">
+        <span>LangGraph</span>
+        <span>LangSmith Tracing</span>
+        <span>Tongyi / qwen-flash</span>
+        <span>Hybrid Agent</span>
+      </div>
+    </header>
+
+    <nav class="toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">整体架构</a></li>
+        <li><a href="#langsmith">LangSmith 重点</a></li>
+        <li><a href="#flow">工作流总图</a></li>
+        <li><a href="#catalog">方法一览</a></li>
+        <li><a href="#bootstrap">配置与提示词</a></li>
+        <li><a href="#models">数据结构</a></li>
+        <li><a href="#nodes">节点方法详解</a></li>
+        <li><a href="#routing">路由与装配</a></li>
+        <li><a href="#entry">入口 run_wealth_advisor</a></li>
+        <li><a href="#runs">实测 Step 记录</a></li>
+        <li><a href="#howto">如何复现</a></li>
+      </ol>
+    </nav>
+
+    <section id="overview">
+      <h2>1. 整体架构</h2>
+      <p>
+        本文件在 LangGraph 混合智能体上叠加 LangSmith 可观测性。业务上仍是三层：
+        反应式快答、协调层分流、深思熟虑多步规划；工程上通过环境变量打开追踪，
+        并在 <code>invoke</code> 时传入 tags / metadata / run_name。
+      </p>
+      <div class="layer-grid">
+        <div class="layer-card">
+          <div class="num">L1 · Reactive</div>
+          <h4>反应式</h4>
+          <p>assess 判定后进入 reactive：可选调用上证指数工具，快速生成 final_response。</p>
+        </div>
+        <div class="layer-card">
+          <div class="num">L2 · Coordinator</div>
+          <h4>协调层</h4>
+          <p>assess_query 产出 query_type + processing_mode，条件边决定下一节点。</p>
+        </div>
+        <div class="layer-card delib">
+          <div class="num">L3 · Deliberative</div>
+          <h4>深思熟虑</h4>
+          <p>collect_data → analyze → recommend → respond，多步 LLM 链完成投顾建议。</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  U[用户查询] --> A[assess_query]
+  A -->|reactive| R[reactive_processing]
+  A -->|deliberative| C[collect_data]
+  C --> AN[analyze_data]
+  AN --> REC[generate_recommendations]
+  R --> RSP[respond]
+  REC --> RSP
+  RSP --> ENDNODE[END]
+  LS[(LangSmith Trace)] -.-> A
+  LS -.-> R
+  LS -.-> C
+  LS -.-> AN
+  LS -.-> REC
+        </pre>
+        <p class="caption">图 1 · 混合架构与 LangSmith 旁路追踪（点击「查看源代码」可看 Mermaid 原文）</p>
+      </div>
+    </section>
+
+    <section id="langsmith">
+      <h2>2. LangSmith 重点讲解</h2>
+      <p>
+        LangSmith 不改业务图结构：开启后，LangChain / LangGraph 的 Runnable
+        （含 LLM chain、整张编译图）会自动上报 run tree。本文件做了三件事：
+        检测开关、打标签元数据、在主程序提示查看地址。
+      </p>
+
+      <div class="ls-grid">
+        <div class="ls-card">
+          <h4>1. 环境变量开关</h4>
+          <p><code>LANGCHAIN_TRACING_V2=true</code> 打开追踪；<code>LANGSMITH_API_KEY</code> 鉴权；
+            <code>LANGCHAIN_PROJECT</code> 指定项目桶。
+          </p>
+        </div>
+        <div class="ls-card">
+          <h4>2. 代码侧探测</h4>
+          <p><code>LANGSMITH_ENABLED</code> 读取 tracing 开关；未开启时仍可本地跑 Agent。</p>
+        </div>
+        <div class="ls-card">
+          <h4>3. RunnableConfig</h4>
+          <p>在 <code>agent.invoke(..., config=)</code> 注入 tags / metadata / run_name，便于过滤与检索。</p>
+        </div>
+        <div class="ls-card">
+          <h4>4. 自动嵌套 Trace</h4>
+          <p>每个节点内的 <code>prompt | llm | parser</code> 都会作为子 span 出现在同一条 Trace。</p>
+        </div>
+      </div>
+
+      <h3>2.1 环境变量与探测代码</h3>
+      <div class="code-block">
+        <div class="code-label">投顾助手+langsmith.py · L60–72</div>
+        <pre><code># =============================== LangSmith 配置 =================================
+LANGSMITH_ENABLED = os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true"
+LANGSMITH_PROJECT = os.getenv("LANGCHAIN_PROJECT", "wealth-advisor-hybrid-agent")
+print("LANGSMITH_ENABLED=", LANGSMITH_ENABLED)
+</code></pre>
+      </div>
+      <div class="callout">
+        <strong>Windows PowerShell 示例：</strong>
+        <code>$env:LANGSMITH_API_KEY="..."</code>；
+        <code>$env:LANGCHAIN_TRACING_V2="true"</code>；
+        <code>$env:LANGCHAIN_PROJECT="wealth-advisor-hybrid-agent"</code>。
+        注意：若项目名被写成带引号的字面量（如 <code>"wealth-advisor-hybrid-agent"</code>），
+        LangSmith 会把引号也当成项目名的一部分。
+      </div>
+
+      <h3>2.2 注入 RunnableConfig（核心）</h3>
+      <p>
+        仅当 <code>LANGSMITH_ENABLED</code> 为真时构造 config；否则走无 config 的 invoke。
+        tags 用于过滤（客户、风险偏好），metadata 存结构化字段，run_name 让控制台列表可读。
+      </p>
+      <div class="code-block">
+        <div class="code-label">run_wealth_advisor · LangSmith config</div>
+        <pre><code>if LANGSMITH_ENABLED:
+    config = RunnableConfig(
+        tags=[
+            "wealth-advisor", "hybrid-agent",
+            f"customer-{customer_id}",
+            customer_profile.get("risk_tolerance", "unknown"),
+        ],
+        metadata={
+            "customer_id": customer_id,
+            "risk_tolerance": customer_profile.get("risk_tolerance", "unknown"),
+            "investment_horizon": customer_profile.get("investment_horizon", "unknown"),
+            "portfolio_value": customer_profile.get("portfolio_value", 0),
+            "user_query": user_query[:100],
+            "timestamp": datetime.now().isoformat(),
+        },
+        run_name=f"wealth-advisor-{customer_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+    )
+result = agent.invoke(initial_state, config=config)  # 或无 config
+</code></pre>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  participant App as run_wealth_advisor
+  participant Graph as Compiled StateGraph
+  participant LLM as Tongyi LLM
+  participant LS as LangSmith API
+
+  App->>App: 读取 LANGCHAIN_TRACING_V2
+  alt tracing=true
+    App->>Graph: invoke(state, RunnableConfig)
+    Graph->>LS: 创建 root run + tags/metadata
+    Graph->>LLM: 各节点 chain.invoke
+    LLM-->>LS: 子 span（prompt/输出/耗时）
+    Graph-->>LS: 节点完成事件
+  else tracing=false
+    App->>Graph: invoke(state)
+    Note over LS: 不上报
+  end
+  Graph-->>App: 最终 WealthAdvisorState
+        </pre>
+        <p class="caption">图 2 · LangSmith 追踪时序</p>
+      </div>
+
+      <h3>2.3 在 LangSmith UI 能看到什么</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>维度</th>
+            <th>本项目写入内容</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Project</td>
+            <td><code>LANGCHAIN_PROJECT</code></td>
+            <td>按实验/课程隔离</td>
+          </tr>
+          <tr>
+            <td>Run name</td>
+            <td><code>wealth-advisor-customer1-时间戳</code></td>
+            <td>人工扫一眼定位</td>
+          </tr>
+          <tr>
+            <td>Tags</td>
+            <td>wealth-advisor / hybrid-agent / customer-* / 风险偏好</td>
+            <td>过滤、对比</td>
+          </tr>
+          <tr>
+            <td>Metadata</td>
+            <td>客户、持仓、查询摘要、timestamp</td>
+            <td>排障关联业务上下文</td>
+          </tr>
+          <tr>
+            <td>Spans</td>
+            <td>assess / reactive / collect_data / analyze / recommend</td>
+            <td>看哪步慢、哪步解析失败</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="flow">
+      <h2>3. 工作流总图</h2>
+      <p>与 <code>create_wealth_advisor_workflow</code> 中节点与边一一对应。</p>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  subgraph entry [入口]
+    AS[assess]
+  end
+  subgraph reactivePath [反应式]
+    RX[reactive]
+  end
+  subgraph delibPath [深思熟虑]
+    CD[collect_data]
+    AZ[analyze]
+    RC[recommend]
+  end
+  subgraph exit [汇合]
+    RP[respond]
+    ED[END]
+  end
+  AS -->|processing_mode=reactive| RX
+  AS -->|processing_mode=deliberative| CD
+  RX --> RP
+  CD --> AZ --> RC --> RP --> ED
+        </pre>
+        <p class="caption">图 3 · StateGraph 节点与条件边</p>
+      </div>
+    </section>
+
+    <section id="catalog">
+      <h2>4. 方法一览</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>符号</th>
+            <th>角色</th>
+            <th>LangSmith 相关</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>_load_prompts</code></td>
+            <td>读 prompts/投顾助手+langsmith_prompts.yaml</td>
+            <td>否</td>
+          </tr>
+          <tr>
+            <td><code>query_shanghai_index</code></td>
+            <td>模拟行情工具</td>
+            <td>作为工具调用出现在 reactive span</td>
+          </tr>
+          <tr>
+            <td><code>assess_query</code></td>
+            <td>协调节点</td>
+            <td>含 JsonOutputParser LLM 子 span</td>
+          </tr>
+          <tr>
+            <td><code>reactive_processing</code></td>
+            <td>反应式节点</td>
+            <td>1~2 次 LLM + 可选工具</td>
+          </tr>
+          <tr>
+            <td><code>collect_data</code></td>
+            <td>收集节点</td>
+            <td>JSON 解析失败会在此 span 暴露</td>
+          </tr>
+          <tr>
+            <td><code>analyze_data</code></td>
+            <td>分析节点</td>
+            <td>依赖 market_data</td>
+          </tr>
+          <tr>
+            <td><code>generate_recommendations</code></td>
+            <td>建议节点</td>
+            <td>自然语言最终稿</td>
+          </tr>
+          <tr>
+            <td><code>create_wealth_advisor_workflow</code></td>
+            <td>图工厂</td>
+            <td>compile 后整图可追踪</td>
+          </tr>
+          <tr>
+            <td><code>run_wealth_advisor</code></td>
+            <td>业务入口</td>
+            <td>构造 RunnableConfig 并 invoke</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="bootstrap">
+      <h2>5. 配置与提示词</h2>
+      <div class="method-card">
+        <h4>_load_prompts / 提示词常量</h4>
+        <div class="sig">def _load_prompts() -&gt; Dict[str, str]</div>
+        <div class="method-meta">
+          <div class="k">功能</div>
+          <div>从 <code>prompts/投顾助手+langsmith_prompts.yaml</code> 加载 ASSESSMENT / REACTIVE / DATA_COLLECTION / ANALYSIS
+            / RECOMMENDATION / REACTIVE_AGENT / REACTIVE_FINAL。</div>
+          <div class="k">LLM</div>
+          <div><code>Tongyi(model_name="qwen-flash")</code>，密钥 <code>DASHSCOPE_API_KEY</code>。</div>
+        </div>
+      </div>
+      <div class="code-block">
+        <div class="code-label">兼容补丁 · 导入前设置 langchain 属性</div>
+        <pre><code>import langchain
+if not hasattr(langchain, "verbose"):
+    langchain.verbose = False
+# debug / llm_cache 同理，避免 1.1.x 属性缺失
+</code></pre>
+      </div>
+    </section>
+
+    <section id="models">
+      <h2>6. 数据结构</h2>
+      <div class="method-card">
+        <h4>WealthAdvisorState</h4>
+        <div class="sig">TypedDict · StateGraph 共享状态</div>
+        <div class="method-meta">
+          <div class="k">输入</div>
+          <div><code>user_query</code>、<code>customer_profile</code></div>
+          <div class="k">分流</div>
+          <div><code>query_type</code>、<code>processing_mode</code></div>
+          <div class="k">深思熟虑</div>
+          <div><code>market_data</code>、<code>analysis_results</code></div>
+          <div class="k">输出</div>
+          <div><code>final_response</code>、<code>error</code>、<code>current_phase</code></div>
+        </div>
+      </div>
+      <p class="muted">
+        <code>CustomerProfile</code> / <code>EmergencyResponseOutput</code> / <code>InvestmentAnalysisOutput</code>
+        用 Pydantic 描述契约；运行时示例客户是普通 dict，未强制校验。
+      </p>
+    </section>
+
+    <section id="nodes">
+      <h2>7. 节点方法详解</h2>
+
+      <div class="method-card">
+        <h4>assess_query</h4>
+        <div class="sig">assess 节点 · prompt | llm | JsonOutputParser</div>
+        <p>根据用户问题输出 query_type（emergency/informational/analytical）与 processing_mode（reactive/deliberative）。非法枚举时回落到
+          reactive / emergency。</p>
+      </div>
+
+      <div class="method-card">
+        <h4>reactive_processing</h4>
+        <div class="sig">reactive 节点 · 工具标记协议</div>
+        <p>
+          先用 <code>REACTIVE_AGENT_PROMPT</code> 判断是否包含
+          <code>[CALL_TOOL:上证指数查询]</code>；需要则调用 <code>query_shanghai_index</code>，
+          再用 <code>REACTIVE_FINAL_PROMPT</code> 生成最终回答。这是字符串协议工具调用，不是 bind_tools。
+        </p>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  Q[用户问题] --> L1[REACTIVE_AGENT_PROMPT + LLM]
+  L1 -->|含 CALL_TOOL| T[query_shanghai_index]
+  T --> L2[REACTIVE_FINAL_PROMPT + LLM]
+  L1 -->|不含| A[直接作为回答]
+  L2 --> F[final_response]
+  A --> F
+        </pre>
+        <p class="caption">图 4 · 反应式工具调用协议</p>
+      </div>
+
+      <div class="method-card">
+        <h4>collect_data / analyze_data / generate_recommendations</h4>
+        <div class="sig">深思熟虑三段 · JSON → JSON → 文本</div>
+        <div class="method-meta">
+          <div class="k">collect</div>
+          <div>产出 market_data（模拟 collected_data）</div>
+          <div class="k">analyze</div>
+          <div>缺 market_data 则报错并回指 collect_data 阶段</div>
+          <div class="k">recommend</div>
+          <div>StrOutputParser，生成可直接给客户看的建议</div>
+        </div>
+      </div>
+
+      <div class="method-card">
+        <h4>respond_function</h4>
+        <div class="sig">respond 节点 · 汇合出口</div>
+        <p>若仍无 final_response，填入默认错误文案。两条路径都边连到此节点后 END。</p>
+      </div>
+    </section>
+
+    <section id="routing">
+      <h2>8. 路由与装配</h2>
+      <div class="code-block">
+        <div class="code-label">create_wealth_advisor_workflow</div>
+        <pre><code>workflow = StateGraph(WealthAdvisorState)
+workflow.add_node("assess", assess_query)
+workflow.add_node("reactive", reactive_processing)
+workflow.add_node("collect_data", collect_data)
+workflow.add_node("analyze", analyze_data)
+workflow.add_node("recommend", generate_recommendations)
+workflow.add_node("respond", respond_function)
+workflow.set_entry_point("assess")
+workflow.add_conditional_edges(
+    "assess",
+    lambda x: "reactive" if x.get("processing_mode") == "reactive" else "collect_data",
+    {"reactive": "reactive", "collect_data": "collect_data"},
+)
+# reactive→respond；collect_data→analyze→recommend→respond→END
+return workflow.compile()
+</code></pre>
+      </div>
+    </section>
+
+    <section id="entry">
+      <h2>9. 入口 run_wealth_advisor</h2>
+      <ol>
+        <li>compile 工作流，取出示例客户画像。</li>
+        <li>打印 Mermaid（<code>agent.get_graph().draw_mermaid()</code>）。</li>
+        <li>按开关组装 LangSmith <code>RunnableConfig</code>。</li>
+        <li><code>invoke</code> 得到完整状态 dict。</li>
+      </ol>
+      <div class="callout">
+        交互主程序在 <code>if __name__ == "__main__"</code>：展示 LangSmith 状态、示例查询菜单、客户选择，
+        最后打印处理模式、最终响应与耗时。
+      </div>
+      <p>
+        非交互分步演示请运行同目录 <code>1-step_demo_langsmith.py</code>：
+        使用 <code>agent.stream</code>，每完成一个节点打印 <code>Step N</code>。
+      </p>
+    </section>
+
+
+    <section id="runs">
+      <h2>10. 实测 Step 运行记录</h2>
+      <p class="muted">数据来自 <code>1-step_demo_langsmith.py</code>，生成时间 2026-07-27T19:23:55。控制台会按 Step 打印；此处同步落盘到
+        <code>step_demo_results.json</code>。</p>
+      <h3>用例：反应式-行情查询（成功）</h3>
+      <ul>
+        <li>查询：今天上证指数的表现如何？</li>
+        <li>客户：customer1</li>
+        <li>模式：<code>reactive</code> / 类型：<code>emergency</code></li>
+        <li>耗时：5.90s</li>
+        <li>LangSmith：已启用，项目 <code>"wealth-advisor-hybrid-agent"</code></li>
+      </ul>
+      <div class="run-step ok">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 1</span>
+          <span class="run-step-node">assess</span>
+        </div>
+        <div class="step-log">node=assess
+          query_type=emergency
+          processing_mode=reactive
+          current_phase=assess</div>
+      </div>
+      <div class="run-step ok">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 2</span>
+          <span class="run-step-node">reactive</span>
+        </div>
+        <div class="step-log">node=reactive
+          query_type=emergency
+          processing_mode=reactive
+          current_phase=assess
+          final_response=今日上证指数报3125.62点，上涨6.32点，涨幅0.20%，呈现小幅震荡上行态势，市场情绪偏稳。</div>
+      </div>
+      <div class="run-step ok">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 3</span>
+          <span class="run-step-node">respond</span>
+        </div>
+        <div class="step-log">node=respond
+          query_type=emergency
+          processing_mode=reactive
+          current_phase=assess
+          final_response=今日上证指数报3125.62点，上涨6.32点，涨幅0.20%，呈现小幅震荡上行态势，市场情绪偏稳。</div>
+      </div>
+      <div class="callout">
+        <strong>最终响应：</strong>今日上证指数报3125.62点，上涨6.32点，涨幅0.20%，呈现小幅震荡上行态势，市场情绪偏稳。
+      </div>
+      <h3>用例：深思熟虑-组合优化（失败）</h3>
+      <ul>
+        <li>查询：根据当前市场情况，我应该如何调整投资组合以应对可能的经济衰退？</li>
+        <li>客户：customer1</li>
+        <li>模式：<code>deliberative</code> / 类型：<code>analytical</code></li>
+        <li>耗时：16.96s</li>
+        <li>LangSmith：已启用，项目 <code>"wealth-advisor-hybrid-agent"</code></li>
+      </ul>
+      <div class="run-step ok">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 1</span>
+          <span class="run-step-node">assess</span>
+        </div>
+        <div class="step-log">node=assess
+          query_type=analytical
+          processing_mode=deliberative
+          current_phase=assess</div>
+      </div>
+      <div class="run-step err">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 2</span>
+          <span class="run-step-node">collect_data</span>
+        </div>
+        <div class="step-log">node=collect_data
+          query_type=analytical
+          processing_mode=deliberative
+          current_phase=collect_data
+          error=数据收集阶段出错: Invalid json output: {
+          "required_data_types": [
+          "经济指标",
+          "资产类别表现数据",
+          "行业趋势",
+          "风险指标",
+          "历史回报率",
+          "ESG评级数据",
+          "债券信用利差与期限结构",
+          "市场情绪与波动率指标"
+          ],
+          "data_sources": [
+          "国家统计局 &amp; 央行（中国）/美联储（美国）——GDP增速、CPI、失业率、PMI、收益率曲线斜率",
+          "Wind / Bloomberg / Morningstar —— 股票/债券/另类资产指数日频回报、夏普比率、最大回撤、波动率",
+          "MSCI ESG Ratings / CASS ESG Database —— 科技行业及持仓标的ESG评分与争议事件",
+          "中证指数公司 / S&amp;P Global —— 行业指数（如中证科技指数、中债-综合财富指数）、板块轮动信号",
+          "VIX指数、中国10年期国债隐含波动率（CBOE China VIX Pr...</div>
+      </div>
+      <div class="run-step err">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 3</span>
+          <span class="run-step-node">analyze</span>
+        </div>
+        <div class="step-log">node=analyze
+          query_type=analytical
+          processing_mode=deliberative
+          current_phase=collect_data
+          error=分析阶段缺少市场数据</div>
+      </div>
+      <div class="run-step err">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 4</span>
+          <span class="run-step-node">recommend</span>
+        </div>
+        <div class="step-log">node=recommend
+          query_type=analytical
+          processing_mode=deliberative
+          current_phase=analyze
+          error=建议生成阶段缺少分析结果</div>
+      </div>
+      <div class="run-step err">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 5</span>
+          <span class="run-step-node">respond</span>
+        </div>
+        <div class="step-log">node=respond
+          query_type=analytical
+          processing_mode=deliberative
+          current_phase=analyze
+          final_response=无法生成响应。请检查处理流程。
+          error=建议生成阶段缺少分析结果</div>
+      </div>
+      <div class="callout">
+        <strong>最终响应：</strong>无法生成响应。请检查处理流程。
+      </div>
+    </section>
+
+    <section id="howto">
+      <h2>11. 如何复现</h2>
+      <ol>
+        <li>安装依赖：<code>pip install -r requirements.txt</code></li>
+        <li>设置 <code>DASHSCOPE_API_KEY</code>、<code>LANGSMITH_API_KEY</code>、
+          <code>LANGCHAIN_TRACING_V2=true</code>、<code>LANGCHAIN_PROJECT</code>
+        </li>
+        <li>分步演示：<code>python 1-step_demo_langsmith.py</code></li>
+        <li>交互主程序：<code>python 投顾助手+langsmith.py</code></li>
+        <li>打开 <a href="https://smith.langchain.com" target="_blank" rel="noopener">smith.langchain.com</a> 查看 Trace
+        </li>
+      </ol>
+    </section>
+
+    <footer>
+      源码：<code>投顾助手+langsmith.py</code> ·
+      分步脚本：<code>1-step_demo_langsmith.py</code> ·
+      流程图可点「查看源代码」展开 Mermaid 原文。
+    </footer>
+  </div>
+</body>
+
+</html>

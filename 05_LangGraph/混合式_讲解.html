@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>混合式智能体 · 代码讲解</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+    const LIGHT_TEXT = "#ffffff";
+    const DARK_TEXT = "#1a2430";
+
+    function parseCssColor(value) {
+      if (!value || value === "none" || value === "transparent") return null;
+      const v = String(value).trim();
+      if (v.startsWith("#")) {
+        let hex = v.slice(1);
+        if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+        if (hex.length === 8) hex = hex.slice(0, 6);
+        if (hex.length !== 6) return null;
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+      const m = v.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+      if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+      return null;
+    }
+
+    function relativeLuminance({ r, g, b }) {
+      const toLinear = (c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    }
+
+    function textColorForBg(bg) {
+      // 浅色背景用深字，深色背景用浅字
+      return relativeLuminance(bg) > 0.42 ? DARK_TEXT : LIGHT_TEXT;
+    }
+
+    function shapeFill(shape) {
+      if (!shape) return null;
+      return parseCssColor(
+        shape.getAttribute("fill") ||
+          shape.style.fill ||
+          getComputedStyle(shape).fill
+      );
+    }
+
+    function findBackgroundColor(el, diagramRoot) {
+      // 1) 时序图 Note / label 浅色框（优先，避免误用深色图底）
+      const noteOrLabel = el.closest("g.note, g.label, .note, .activation0, .activation1, .activation2");
+      if (noteOrLabel) {
+        const rect = noteOrLabel.querySelector("rect");
+        const c = shapeFill(rect);
+        if (c) return c;
+      }
+
+      // 2) flowchart / state 节点
+      const nodeG = el.closest("g.node, g.actor, g.cluster");
+      if (nodeG) {
+        const shape = nodeG.querySelector(
+          ":scope > rect, :scope > polygon, :scope > circle, :scope > ellipse, :scope > path"
+        );
+        const c = shapeFill(shape);
+        if (c) return c;
+        if (nodeG.classList.contains("cluster")) {
+          const c2 = shapeFill(nodeG.querySelector("rect"));
+          if (c2) return c2;
+        }
+      }
+
+      // 3) 边标签背景
+      const edgeLabel = el.closest("g.edgeLabel");
+      if (edgeLabel) {
+        const c = shapeFill(edgeLabel.querySelector("rect"));
+        if (c) return c;
+      }
+
+      // 4) 沿父级向上找最近的实心 rect（覆盖 Mermaid 各种分组结构）
+      let cur = el.parentElement;
+      while (cur && cur !== diagramRoot) {
+        if (cur.tagName === "g") {
+          for (const shape of cur.querySelectorAll(":scope > rect")) {
+            const fillAttr = shape.getAttribute("fill");
+            if (!fillAttr || fillAttr === "none") continue;
+            const c = parseCssColor(fillAttr);
+            if (c) return c;
+          }
+        }
+        cur = cur.parentElement;
+      }
+
+      // 5) 图容器底色
+      const diagramBox = diagramRoot.closest(".diagram");
+      if (diagramBox) {
+        const bg = parseCssColor(getComputedStyle(diagramBox).backgroundColor);
+        if (bg) return bg;
+      }
+      return { r: 22, g: 32, b: 42 };
+    }
+
+    function applyTextColor(el, color) {
+      if (el instanceof SVGElement) {
+        el.setAttribute("fill", color);
+        el.style.fill = color;
+      }
+      el.style.setProperty("color", color, "important");
+    }
+
+    function adaptMermaidTextContrast() {
+      document.querySelectorAll(".diagram .mermaid").forEach((root) => {
+        root.querySelectorAll(
+          "text, tspan, .nodeLabel, .edgeLabel, .label, .cluster-label, .messageText, .noteText, .actor, .loopText, foreignObject div, foreignObject span, foreignObject p"
+        ).forEach((el) => {
+          if (el.closest(".caption")) return;
+          const color = textColorForBg(findBackgroundColor(el, root));
+          applyTextColor(el, color);
+          // foreignObject 内子节点同步
+          if (el.tagName?.toLowerCase() === "div" || el.tagName?.toLowerCase() === "span") {
+            el.querySelectorAll("*").forEach((child) => applyTextColor(child, color));
+          }
+        });
+
+        // 额外：浅色 Note / Label 框内全部文字强制深色（工具层时序图常见问题）
+        root.querySelectorAll("g.note, g.label").forEach((g) => {
+          const rect = g.querySelector("rect");
+          const bg = shapeFill(rect);
+          if (!bg) return;
+          const color = textColorForBg(bg);
+          g.querySelectorAll("text, tspan, foreignObject, foreignObject *").forEach((t) => {
+            applyTextColor(t, color);
+          });
+        });
+      });
+    }
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#1e3a4a",
+        primaryTextColor: "#ffffff",
+        primaryBorderColor: "#3d6a7a",
+        mainBkg: "#1e3a4a",
+        nodeBorder: "#3d6a7a",
+        // 次级/集群/标签/Note 一律深色底 + 浅色字，避免浅色方块配白字
+        secondaryColor: "#243848",
+        secondaryTextColor: "#ffffff",
+        tertiaryColor: "#2a4050",
+        tertiaryTextColor: "#ffffff",
+        clusterBkg: "#1a303c",
+        clusterBorder: "#4a7080",
+        titleColor: "#ffffff",
+        lineColor: "#8fadc0",
+        textColor: "#ffffff",
+        edgeLabelBackground: "#1e3a4a",
+        actorBkg: "#1e3a4a",
+        actorBorder: "#3d6a7a",
+        actorTextColor: "#ffffff",
+        actorLineColor: "#8fadc0",
+        signalColor: "#c5d8e2",
+        signalTextColor: "#ffffff",
+        labelBoxBkgColor: "#243848",
+        labelBoxBorderColor: "#4a7080",
+        labelTextColor: "#ffffff",
+        loopTextColor: "#ffffff",
+        noteBkgColor: "#243848",
+        noteTextColor: "#ffffff",
+        noteBorderColor: "#4a7080",
+        activationBkgColor: "#2a4a5a",
+        activationBorderColor: "#3d6a7a",
+        sequenceNumberColor: "#ffffff",
+        background: "#162028",
+        fontFamily: "IBM Plex Sans, sans-serif"
+      },
+      flowchart: { curve: "basis", padding: 18 },
+      sequence: {
+        actorMargin: 48,
+        messageMargin: 36,
+        noteMargin: 12,
+        mirrorActors: false,
+        useMaxWidth: true
+      }
+    });
+
+    function enhanceDiagramSourceView() {
+      // 渲染前保存 Mermaid 源码，并给每张图加「查看源代码」按钮
+      document.querySelectorAll(".diagram").forEach((box) => {
+        const mermaidEl = box.querySelector(".mermaid");
+        if (!mermaidEl || box.querySelector(".diagram-toolbar")) return;
+
+        const source = (mermaidEl.textContent || "").trim();
+        if (!source) return;
+
+        const toolbar = document.createElement("div");
+        toolbar.className = "diagram-toolbar";
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "diagram-src-btn";
+        toggleBtn.textContent = "查看源代码";
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "diagram-copy-btn";
+        copyBtn.textContent = "复制";
+        copyBtn.hidden = true;
+
+        toolbar.appendChild(toggleBtn);
+        toolbar.appendChild(copyBtn);
+
+        const sourcePanel = document.createElement("pre");
+        sourcePanel.className = "diagram-source";
+        sourcePanel.hidden = true;
+        sourcePanel.textContent = source;
+
+        box.insertBefore(toolbar, box.firstChild);
+        const caption = box.querySelector(".caption");
+        if (caption) box.insertBefore(sourcePanel, caption);
+        else box.appendChild(sourcePanel);
+
+        toggleBtn.addEventListener("click", () => {
+          const willShow = sourcePanel.hidden;
+          sourcePanel.hidden = !willShow;
+          copyBtn.hidden = !willShow;
+          toggleBtn.textContent = willShow ? "收起源代码" : "查看源代码";
+          toggleBtn.setAttribute("aria-expanded", willShow ? "true" : "false");
+        });
+
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(source);
+            copyBtn.textContent = "已复制";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          } catch {
+            copyBtn.textContent = "复制失败";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          }
+        });
+      });
+    }
+
+    enhanceDiagramSourceView();
+    await mermaid.run({ querySelector: ".mermaid" });
+    adaptMermaidTextContrast();
+    requestAnimationFrame(adaptMermaidTextContrast);
+    setTimeout(adaptMermaidTextContrast, 200);
+    setTimeout(adaptMermaidTextContrast, 600);
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --bg-deep: #e5e0d4;
+      --ink: #1a2430;
+      --ink-muted: #4a5868;
+      --accent: #2a6a7a;
+      --accent-soft: #d5e8ee;
+      --line: #c5bdb0;
+      --card: #faf8f3;
+      --code-bg: #1a2830;
+      --code-fg: #d5e4ea;
+      --warn: #8a4b1f;
+      --diagram-bg: #162028;
+      --reactive: #2a6a7a;
+      --deliberative: #6a5a3a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 70% 45% at 0% 0%, #d5e8ee 0%, transparent 55%),
+        radial-gradient(ellipse 50% 35% at 100% 5%, #e8dfd0 0%, transparent 50%),
+        var(--bg);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .page { max-width: 980px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+
+    header.hero {
+      margin-bottom: 2.5rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    header.hero .brand {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(2rem, 5vw, 2.7rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    header.hero .lede {
+      color: var(--ink-muted);
+      max-width: 42em;
+      font-size: 1.05rem;
+    }
+
+    header.hero .meta {
+      margin-top: 1.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    header.hero .meta span {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+    }
+
+    nav.toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.75rem;
+    }
+
+    nav.toc h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-muted);
+      margin-bottom: 0.7rem;
+    }
+
+    nav.toc ol { padding-left: 1.25rem; columns: 2; gap: 1.5rem; }
+    nav.toc a { color: var(--accent); text-decoration: none; font-size: 0.94rem; }
+    nav.toc a:hover { text-decoration: underline; }
+
+    section { margin-bottom: 3.25rem; }
+
+    section > h2 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      padding-bottom: 0.45rem;
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+
+    section > h3 {
+      font-size: 1.08rem;
+      font-weight: 600;
+      margin: 1.6rem 0 0.7rem;
+    }
+
+    p { margin-bottom: 0.95rem; }
+    p.muted { color: var(--ink-muted); }
+    ul, ol { margin: 0 0 1rem 1.3rem; }
+    li { margin-bottom: 0.3rem; }
+
+    .diagram {
+      background: var(--diagram-bg);
+      border: 1px solid #2a3a45;
+      padding: 1.4rem 1rem;
+      margin: 1.2rem 0 1.6rem;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .diagram-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .diagram-src-btn,
+    .diagram-copy-btn {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      padding: 0.28rem 0.65rem;
+      border: 1px solid #4a7080;
+      background: #1e3a4a;
+      color: #e8f2f6;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    .diagram-src-btn:hover,
+    .diagram-copy-btn:hover {
+      background: #2a4a5a;
+    }
+
+    .diagram-source {
+      display: block;
+      margin: 0 0 0.85rem;
+      padding: 0.9rem 1rem;
+      background: #0f181e;
+      border: 1px solid #2a3a45;
+      border-left: 3px solid #5a9aaa;
+      color: #d5e4ea;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 22rem;
+      overflow: auto;
+    }
+
+    .diagram-source[hidden] {
+      display: none !important;
+    }
+
+    .diagram .caption {
+      font-size: 0.78rem;
+      color: #9bb5c0 !important;
+      text-align: center;
+      margin-top: 0.7rem;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .mermaid { display: flex; justify-content: center; }
+
+    /* 图内统一深色块 + 浅色字；不再给 Note/Label 强制深色字 */
+    .diagram .mermaid g.note > rect,
+    .diagram .mermaid g.label > rect,
+    .diagram .mermaid .edgeLabel > rect,
+    .diagram .mermaid g.cluster > rect {
+      fill: #243848 !important;
+      stroke: #4a7080 !important;
+    }
+
+    .diagram .mermaid g.note text,
+    .diagram .mermaid g.note tspan,
+    .diagram .mermaid g.note foreignObject,
+    .diagram .mermaid g.note foreignObject *,
+    .diagram .mermaid .noteText,
+    .diagram .mermaid g.label text,
+    .diagram .mermaid g.label tspan,
+    .diagram .mermaid g.label foreignObject,
+    .diagram .mermaid g.label foreignObject *,
+    .diagram .mermaid g.actor text,
+    .diagram .mermaid g.actor tspan,
+    .diagram .mermaid .actor,
+    .diagram .mermaid .cluster-label,
+    .diagram .mermaid .edgeLabel,
+    .diagram .mermaid .nodeLabel,
+    .diagram .mermaid text,
+    .diagram .mermaid tspan {
+      fill: #ffffff !important;
+      color: #ffffff !important;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.4rem;
+      font-size: 0.9rem;
+      background: var(--card);
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 0.6rem 0.8rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: var(--bg-deep); font-weight: 600; font-size: 0.84rem; }
+
+    code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.86em;
+      background: var(--accent-soft);
+      padding: 0.08em 0.32em;
+      border-radius: 2px;
+      color: var(--accent);
+    }
+
+    .code-block { margin: 1rem 0 1.4rem; }
+
+    .code-block .code-label {
+      display: inline-block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.74rem;
+      color: #9bb5c0;
+      background: #121c24;
+      padding: 0.32rem 0.7rem;
+      border: 1px solid #2a3a45;
+      border-bottom: none;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      border-left: 3px solid var(--accent);
+      border-top: 1px solid #2a3a45;
+    }
+
+    pre code { background: none; color: inherit; padding: 0; }
+
+    .callout {
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      padding: 0.95rem 1.1rem;
+      margin: 1.15rem 0;
+      font-size: 0.95rem;
+    }
+
+    .callout.warn {
+      background: #f3e6d6;
+      border-left-color: var(--warn);
+    }
+
+    .method-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      margin: 1rem 0 1.35rem;
+      padding: 1.1rem 1.2rem;
+    }
+
+    .method-card h4 {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.98rem;
+      color: var(--accent);
+      margin-bottom: 0.45rem;
+    }
+
+    .method-card .sig {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      margin-bottom: 0.65rem;
+      word-break: break-all;
+    }
+
+    .method-meta {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 0.35rem 0.75rem;
+      font-size: 0.9rem;
+      margin: 0.6rem 0;
+    }
+
+    .method-meta .k {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      padding-top: 0.15rem;
+    }
+
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin: 1.2rem 0;
+    }
+
+    .layer-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--accent);
+      padding: 1rem;
+    }
+
+    .layer-card.delib { border-top-color: var(--deliberative); }
+
+    .layer-card .num {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+    }
+
+    .layer-card.delib .num { color: var(--deliberative); }
+
+    .layer-card h4 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      margin: 0.3rem 0 0.4rem;
+      font-size: 1rem;
+    }
+
+    .layer-card p {
+      font-size: 0.86rem;
+      color: var(--ink-muted);
+      margin: 0;
+    }
+
+    footer {
+      margin-top: 3.5rem;
+      padding-top: 1.3rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.84rem;
+      color: var(--ink-muted);
+    }
+
+
+    .run-step {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      padding: 1rem 1.15rem;
+      margin: 1rem 0 1.35rem;
+    }
+    .run-step-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5rem 0.85rem;
+      margin-bottom: 0.55rem;
+    }
+    .run-step-badge {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: var(--accent);
+      color: #fff;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+    }
+    .run-step-node {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+      color: var(--accent);
+    }
+    .run-step-title {
+      font-weight: 600;
+      font-size: 0.98rem;
+    }
+    .run-step-desc {
+      font-size: 0.92rem;
+      color: var(--ink-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    @media (max-width: 640px) {
+      nav.toc ol { columns: 1; }
+      .method-meta { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1 class="brand">混合式智能体</h1>
+      <p class="lede">
+        完整讲解 <code>混合式.py</code>：每个方法做什么、谁调用谁、状态如何流转，
+        以及「协调层分流 → 反应式 / 深思熟虑」两条路径如何汇合到最终回答。
+      </p>
+      <div class="meta">
+        <span>Hybrid Agent</span>
+        <span>LangGraph</span>
+        <span>ChatTongyi / qwen-turbo-latest</span>
+        <span>ToolNode + 条件边</span>
+      </div>
+    </header>
+
+    <nav class="toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">整体架构与逻辑</a></li>
+        <li><a href="#callgraph">调用关系总图</a></li>
+        <li><a href="#catalog">方法一览表</a></li>
+        <li><a href="#bootstrap">启动与配置</a></li>
+        <li><a href="#models">数据结构</a></li>
+        <li><a href="#tools">工具层</a></li>
+        <li><a href="#nodes">图节点方法详解</a></li>
+        <li><a href="#routing">路由与工作流装配</a></li>
+        <li><a href="#entry">入口与主程序</a></li>
+        <li><a href="#paths">两条路径对照</a></li>
+        <li><a href="#faq">常见知识点</a></li>
+        <li><a href="#runs">实测运行记录</a></li>
+      </ol>
+    </nav>
+
+    <!-- 1 -->
+    <section id="overview">
+      <h2>1. 整体架构与逻辑</h2>
+      <p>
+        混合智能体把<strong>反应式</strong>（快、可调工具）和<strong>深思熟虑式</strong>（慢、多步分析）
+        放在同一张 LangGraph 里，由协调层 <code>assess_query</code> 根据用户问题决定走哪条路。
+      </p>
+
+      <div class="layer-grid">
+        <div class="layer-card">
+          <div class="num">中层 · 协调</div>
+          <h4>assess</h4>
+          <p>评估 query_type / processing_mode，条件边分流</p>
+        </div>
+        <div class="layer-card">
+          <div class="num">底层 · 反应式</div>
+          <h4>reactive + tools</h4>
+          <p>带工具的 LLM 循环，快速回答行情 / 配置 / 新闻类问题</p>
+        </div>
+        <div class="layer-card delib">
+          <div class="num">顶层 · 深思熟虑</div>
+          <h4>collect → analyze → recommend</h4>
+          <p>三步流水线做深度投顾分析并生成建议文本</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  MAIN["__main__"] --> RUN["run_wealth_advisor"]
+  RUN --> CREATE["create_wealth_advisor_workflow"]
+  CREATE --> GRAPH["Compiled Graph"]
+  RUN --> INV["agent.invoke(initial_state)"]
+  INV --> ASSESS["assess_query"]
+  ASSESS -->|reactive| RA["reactive_agent"]
+  ASSESS -->|deliberative| CD["collect_data"]
+  RA --> SCT{"should_continue_tools"}
+  SCT -->|tools| TN["tool_node"]
+  TN --> RA
+  SCT -->|end| EXT["extract_reactive_response"]
+  EXT --> END1([END])
+  CD --> AN["analyze_data"]
+  AN --> GR["generate_recommendations"]
+  GR --> END2([END])
+        </pre>
+        <p class="caption">图 1 · 从入口到两条路径的总览</p>
+      </div>
+
+      <div class="callout">
+        一句话：用户输入 → 评估分流 →（工具循环 或 三步分析）→ 写入
+        <code>final_response</code> → 结束。
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="callgraph">
+      <h2>2. 调用关系总图</h2>
+      <p>下面按「谁依赖谁」梳理模块引用；实线是直接调用，虚线是图边调度。</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  subgraph Boot["模块加载期"]
+    LP["load_prompts"] --> YML["混合式_prompts.yaml"]
+    LP --> PCONST["五个 PROMPT 常量"]
+    LLM["ChatTongyi llm"]
+    TOOLS["query_* 工具函数"]
+    TOOLS --> BIND["llm.bind_tools → llm_with_tools"]
+    TOOLS --> TN0["ToolNode(tools)"]
+  end
+
+  subgraph Runtime["运行期"]
+    MAIN2["__main__"] --> RUN2["run_wealth_advisor"]
+    RUN2 --> CREATE2["create_wealth_advisor_workflow"]
+    CREATE2 -.->|注册为节点| AQ["assess_query"]
+    CREATE2 -.-> RA2["reactive_agent"]
+    CREATE2 -.-> SCT2["should_continue_tools"]
+    CREATE2 -.-> EXT2["extract_reactive_response"]
+    CREATE2 -.-> CD2["collect_data"]
+    CREATE2 -.-> AN2["analyze_data"]
+    CREATE2 -.-> GR2["generate_recommendations"]
+    CREATE2 -.-> TN0
+    AQ --> LLM
+    RA2 --> BIND
+    CD2 --> LLM
+    AN2 --> LLM
+    GR2 --> LLM
+  end
+        </pre>
+        <p class="caption">图 2 · 加载期绑定 vs 运行期调度</p>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="catalog">
+      <h2>3. 方法一览表</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>角色</th>
+            <th>被谁调用 / 引用</th>
+            <th>调用谁</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>load_prompts</code></td>
+            <td>配置加载</td>
+            <td>模块导入时</td>
+            <td>读 YAML</td>
+          </tr>
+          <tr>
+            <td><code>query_shanghai_index</code></td>
+            <td>工具</td>
+            <td>ToolNode / LLM tool_calls</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>query_portfolio_allocation</code></td>
+            <td>工具</td>
+            <td>ToolNode / LLM tool_calls</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>query_market_news</code></td>
+            <td>工具</td>
+            <td>ToolNode / LLM tool_calls</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>assess_query</code></td>
+            <td>图节点 assess</td>
+            <td>图入口</td>
+            <td>llm + ASSESSMENT_PROMPT</td>
+          </tr>
+          <tr>
+            <td><code>reactive_agent</code></td>
+            <td>图节点</td>
+            <td>条件边 / tools 回边</td>
+            <td>llm_with_tools</td>
+          </tr>
+          <tr>
+            <td><code>should_continue_tools</code></td>
+            <td>条件路由函数</td>
+            <td>add_conditional_edges</td>
+            <td>只读 state.messages</td>
+          </tr>
+          <tr>
+            <td><code>extract_reactive_response</code></td>
+            <td>图节点</td>
+            <td>反应式结束边</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>collect_data</code></td>
+            <td>图节点</td>
+            <td>深思熟虑分支</td>
+            <td>llm + DATA_COLLECTION_PROMPT</td>
+          </tr>
+          <tr>
+            <td><code>analyze_data</code></td>
+            <td>图节点</td>
+            <td>collect_data 之后</td>
+            <td>llm + ANALYSIS_PROMPT</td>
+          </tr>
+          <tr>
+            <td><code>generate_recommendations</code></td>
+            <td>图节点</td>
+            <td>analyze 之后</td>
+            <td>llm + RECOMMENDATION_PROMPT</td>
+          </tr>
+          <tr>
+            <td><code>create_wealth_advisor_workflow</code></td>
+            <td>图工厂</td>
+            <td>run_wealth_advisor</td>
+            <td>挂接上述节点与边</td>
+          </tr>
+          <tr>
+            <td><code>run_wealth_advisor</code></td>
+            <td>业务入口</td>
+            <td>__main__</td>
+            <td>create_* + invoke</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 4 -->
+    <section id="bootstrap">
+      <h2>4. 启动与配置</h2>
+
+      <div class="method-card">
+        <h4>load_prompts</h4>
+        <div class="sig">def load_prompts() -&gt; Dict[str, str]</div>
+        <div class="method-meta">
+          <div class="k">功能</div>
+          <div>从 <code>prompts/混合式_prompts.yaml</code> 读取全部提示词模板。</div>
+          <div class="k">调用方</div>
+          <div>模块顶层：<code>_PROMPTS = load_prompts()</code></div>
+          <div class="k">产物</div>
+          <div>
+            <code>ASSESSMENT_PROMPT</code> /
+            <code>DATA_COLLECTION_PROMPT</code> /
+            <code>ANALYSIS_PROMPT</code> /
+            <code>RECOMMENDATION_PROMPT</code> /
+            <code>REACTIVE_SYSTEM_PROMPT</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-label">混合式.py · Prompt 加载</div>
+<pre><code>PROMPTS_FILE = Path(__file__).parent / "prompts" / "混合式_prompts.yaml"
+
+def load_prompts() -> Dict[str, str]:
+    with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+_PROMPTS = load_prompts()
+ASSESSMENT_PROMPT = _PROMPTS["ASSESSMENT"]
+# ... 其余四个常量同理</code></pre>
+      </div>
+
+      <p>
+        LLM 使用 <code>ChatTongyi</code>（支持 tool calling）；密钥来自环境变量
+        <code>DASHSCOPE_API_KEY</code>。反应式路径用 <code>llm_with_tools</code>，
+        评估 / 深思熟虑路径用裸 <code>llm</code>。
+      </p>
+    </section>
+
+    <!-- 5 -->
+    <section id="models">
+      <h2>5. 数据结构</h2>
+
+      <div class="method-card">
+        <h4>CustomerProfile（Pydantic）</h4>
+        <div class="sig">class CustomerProfile(BaseModel)</div>
+        <p class="muted" style="margin:0.4rem 0">
+          描述客户画像字段契约（风险偏好、期限、目标、配置等）。
+          当前示例数据是普通 dict，未强制用该模型校验。
+        </p>
+      </div>
+
+      <div class="method-card">
+        <h4>WealthAdvisorState（TypedDict）</h4>
+        <div class="sig">图共享状态 · StateGraph(WealthAdvisorState)</div>
+        <div class="method-meta">
+          <div class="k">输入</div>
+          <div><code>user_query</code>、<code>customer_profile</code></div>
+          <div class="k">分流</div>
+          <div><code>query_type</code>、<code>processing_mode</code></div>
+          <div class="k">深思熟虑</div>
+          <div><code>market_data</code>、<code>analysis_results</code></div>
+          <div class="k">反应式</div>
+          <div><code>messages</code>（带 <code>add_messages</code> 归约器，追加而非覆盖）</div>
+          <div class="k">输出</div>
+          <div><code>final_response</code></div>
+          <div class="k">控制</div>
+          <div><code>current_phase</code>、<code>error</code></div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-label">WealthAdvisorState 关键字段</div>
+<pre><code>class WealthAdvisorState(TypedDict):
+    user_query: str
+    customer_profile: Optional[Dict[str, Any]]
+    query_type: Optional[Literal["emergency", "informational", "analytical"]]
+    processing_mode: Optional[Literal["reactive", "deliberative"]]
+    market_data: Optional[Dict[str, Any]]
+    analysis_results: Optional[Dict[str, Any]]
+    messages: Annotated[List[BaseMessage], add_messages]
+    final_response: Optional[str]
+    current_phase: Optional[str]
+    error: Optional[str]</code></pre>
+      </div>
+
+      <div class="callout">
+        <code>messages: Annotated[..., add_messages]</code> 表示节点返回
+        <code>{"messages": [new_msg]}</code> 时，LangGraph 会把新消息<strong>追加</strong>到列表，
+        这是工具循环能保留对话历史的关键。
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="tools">
+      <h2>6. 工具层</h2>
+      <p>三个函数都用 <code>@tool</code> 装饰，供 LLM 按需调用；数据为演示用模拟值。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>工具</th>
+            <th>功能</th>
+            <th>参数</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>query_shanghai_index</code></td>
+            <td>返回上证指数点位 / 涨跌幅字符串</td>
+            <td>无</td>
+          </tr>
+          <tr>
+            <td><code>query_portfolio_allocation</code></td>
+            <td>按资产类型查配置比例</td>
+            <td><code>asset_type</code></td>
+          </tr>
+          <tr>
+            <td><code>query_market_news</code></td>
+            <td>返回若干条模拟市场新闻</td>
+            <td>无</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-label">工具绑定</div>
+<pre><code>tools = [query_shanghai_index, query_portfolio_allocation, query_market_news]
+llm_with_tools = llm.bind_tools(tools)
+tool_node = ToolNode(tools)  # 图节点名 "tools"</code></pre>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  participant RA as reactive_agent
+  participant LLM as llm_with_tools
+  participant TN as tool_node
+
+  RA->>LLM: 1. invoke(messages)
+  LLM-->>RA: 2. AIMessage 含 tool_calls
+  Note over RA,TN: 条件路由 should_continue_tools 返回 tools
+  RA->>TN: 3. 执行工具调用
+  TN-->>RA: 4. ToolMessage 结果写入 messages
+  RA->>LLM: 5. 再次 invoke（含工具结果）
+  LLM-->>RA: 6. AIMessage 最终文本
+  Note over RA: 无 tool_calls 时进入 extract_response
+        </pre>
+        <p class="caption">图 3 · 反应式工具循环时序</p>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="nodes">
+      <h2>7. 图节点方法详解</h2>
+
+      <div class="method-card" id="fn-assess">
+        <h4>assess_query</h4>
+        <div class="sig">def assess_query(state) -&gt; Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">图节点</div>
+          <div><code>assess</code>（入口）</div>
+          <div class="k">功能</div>
+          <div>用协调层 Prompt 判断查询类型与处理模式；非法值回落到 reactive / emergency。</div>
+          <div class="k">读</div>
+          <div><code>user_query</code></div>
+          <div class="k">写</div>
+          <div><code>query_type</code>、<code>processing_mode</code></div>
+          <div class="k">下游</div>
+          <div>条件边：reactive → <code>reactive_agent</code>；否则 → <code>collect_data</code></div>
+        </div>
+        <div class="code-block">
+          <div class="code-label">assess_query 核心</div>
+<pre><code>chain = prompt | llm | JsonOutputParser()
+result = chain.invoke({"user_query": state["user_query"]})
+return {
+    "query_type": query_type,
+    "processing_mode": processing_mode,
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="method-card" id="fn-reactive">
+        <h4>reactive_agent</h4>
+        <div class="sig">def reactive_agent(state) -&gt; Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">图节点</div>
+          <div><code>reactive_agent</code></div>
+          <div class="k">功能</div>
+          <div>
+            首次进入时用 <code>REACTIVE_SYSTEM_PROMPT</code> 拼出 HumanMessage；
+            之后带着完整 messages 调用带工具 LLM。
+          </div>
+          <div class="k">读</div>
+          <div><code>customer_profile</code>、<code>user_query</code>、<code>messages</code></div>
+          <div class="k">写</div>
+          <div><code>messages</code>（追加一条 AIMessage）</div>
+          <div class="k">下游</div>
+          <div><code>should_continue_tools</code> 决定去 tools 或 extract_response</div>
+        </div>
+        <div class="code-block">
+          <div class="code-label">reactive_agent 核心</div>
+<pre><code>if not messages:
+    content = REACTIVE_SYSTEM_PROMPT.format(...)
+    messages = [HumanMessage(content=content)]
+
+response = llm_with_tools.invoke(messages)
+return {"messages": [response]}</code></pre>
+        </div>
+      </div>
+
+      <div class="method-card" id="fn-should">
+        <h4>should_continue_tools</h4>
+        <div class="sig">def should_continue_tools(state) -&gt; str</div>
+        <div class="method-meta">
+          <div class="k">角色</div>
+          <div>条件边路由函数（不是普通图节点）</div>
+          <div class="k">功能</div>
+          <div>看最后一条消息是否带 <code>tool_calls</code>。</div>
+          <div class="k">返回</div>
+          <div><code>"tools"</code> 或 <code>"end"</code>（映射到 extract_response）</div>
+          <div class="k">调用方</div>
+          <div><code>create_wealth_advisor_workflow</code> 里 <code>add_conditional_edges</code></div>
+        </div>
+      </div>
+
+      <div class="method-card" id="fn-extract">
+        <h4>extract_reactive_response</h4>
+        <div class="sig">def extract_reactive_response(state) -&gt; Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">图节点</div>
+          <div><code>extract_response</code></div>
+          <div class="k">功能</div>
+          <div>从 messages 倒序找最后一条有内容的 AIMessage，写入 <code>final_response</code>。</div>
+          <div class="k">下游</div>
+          <div><code>END</code></div>
+        </div>
+      </div>
+
+      <div class="method-card" id="fn-collect">
+        <h4>collect_data</h4>
+        <div class="sig">def collect_data(state) -&gt; Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">图节点</div>
+          <div><code>collect_data</code></div>
+          <div class="k">功能</div>
+          <div>深思熟虑第一步：让 LLM 决定并「模拟」收集市场数据。</div>
+          <div class="k">写</div>
+          <div><code>market_data</code>（取 JSON 中的 collected_data）、<code>current_phase="analyze"</code></div>
+          <div class="k">下游</div>
+          <div>固定边 → <code>analyze</code></div>
+        </div>
+      </div>
+
+      <div class="method-card" id="fn-analyze">
+        <h4>analyze_data</h4>
+        <div class="sig">def analyze_data(state) -&gt; Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">图节点</div>
+          <div><code>analyze</code></div>
+          <div class="k">功能</div>
+          <div>结合客户画像与 market_data 做深度分析，产出结构化分析结果。</div>
+          <div class="k">写</div>
+          <div><code>analysis_results</code>、<code>current_phase="recommend"</code></div>
+          <div class="k">下游</div>
+          <div>固定边 → <code>recommend</code></div>
+        </div>
+      </div>
+
+      <div class="method-card" id="fn-recommend">
+        <h4>generate_recommendations</h4>
+        <div class="sig">def generate_recommendations(state) -&gt; Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">图节点</div>
+          <div><code>recommend</code></div>
+          <div class="k">功能</div>
+          <div>把分析结果写成面向客户的自然语言建议（StrOutputParser）。</div>
+          <div class="k">写</div>
+          <div><code>final_response</code>、<code>current_phase="respond"</code></div>
+          <div class="k">下游</div>
+          <div><code>END</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section id="routing">
+      <h2>8. 路由与工作流装配</h2>
+
+      <div class="method-card">
+        <h4>create_wealth_advisor_workflow</h4>
+        <div class="sig">def create_wealth_advisor_workflow() -&gt; StateGraph</div>
+        <div class="method-meta">
+          <div class="k">功能</div>
+          <div>创建 StateGraph、注册 7 个节点、设置入口与边、compile。</div>
+          <div class="k">调用方</div>
+          <div><code>run_wealth_advisor</code></div>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  ASSESS["assess"] -->|processing_mode==reactive| RA["reactive_agent"]
+  ASSESS -->|else| CD["collect_data"]
+
+  RA -->|有 tool_calls| TOOLS["tools"]
+  TOOLS --> RA
+  RA -->|无 tool_calls| EXT["extract_response"]
+  EXT --> E1([END])
+
+  CD --> AN["analyze"]
+  AN --> REC["recommend"]
+  REC --> E2([END])
+        </pre>
+        <p class="caption">图 4 · 与源码 add_edge / add_conditional_edges 一致的拓扑</p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-label">create_wealth_advisor_workflow · 关键边</div>
+<pre><code>workflow.set_entry_point("assess")
+
+workflow.add_conditional_edges(
+    "assess",
+    lambda x: "reactive_agent" if x.get("processing_mode") == "reactive"
+              else "collect_data",
+    {"reactive_agent": "reactive_agent", "collect_data": "collect_data"},
+)
+
+workflow.add_conditional_edges(
+    "reactive_agent",
+    should_continue_tools,
+    {"tools": "tools", "end": "extract_response"},
+)
+
+workflow.add_edge("tools", "reactive_agent")
+workflow.add_edge("extract_response", END)
+workflow.add_edge("collect_data", "analyze")
+workflow.add_edge("analyze", "recommend")
+workflow.add_edge("recommend", END)
+
+return workflow.compile()</code></pre>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section id="entry">
+      <h2>9. 入口与主程序</h2>
+
+      <div class="method-card">
+        <h4>run_wealth_advisor</h4>
+        <div class="sig">def run_wealth_advisor(user_query, customer_id="customer1") -&gt; Dict</div>
+        <div class="method-meta">
+          <div class="k">功能</div>
+          <div>
+            编译图；从 <code>SAMPLE_CUSTOMER_PROFILES</code> 取画像；构造 initial_state；
+            打印 Mermaid；<code>invoke</code> 后返回最终 state。
+          </div>
+          <div class="k">调用方</div>
+          <div><code>__main__</code></div>
+        </div>
+        <div class="code-block">
+          <div class="code-label">run_wealth_advisor</div>
+<pre><code>agent = create_wealth_advisor_workflow()
+customer_profile = SAMPLE_CUSTOMER_PROFILES.get(customer_id, ...)
+
+initial_state = {
+    "user_query": user_query,
+    "customer_profile": customer_profile,
+    "messages": [],
+    "current_phase": "assess",
+    # 其余中间字段初始化为 None
+}
+
+result = agent.invoke(initial_state)
+return result</code></pre>
+        </div>
+      </div>
+
+      <div class="method-card">
+        <h4>__main__</h4>
+        <div class="method-meta">
+          <div class="k">功能</div>
+          <div>
+            交互选择示例问题 / 自定义问题、选择客户画像，调用
+            <code>run_wealth_advisor</code>，打印处理模式、最终回答与耗时。
+          </div>
+          <div class="k">数据</div>
+          <div>
+            <code>SAMPLE_QUERIES</code>（前 3 条偏反应式，后 3 条偏深思熟虑）、
+            <code>SAMPLE_CUSTOMER_PROFILES</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  participant U as 用户
+  participant M as __main__
+  participant R as run_wealth_advisor
+  participant G as Compiled Graph
+
+  U->>M: 选查询 + 客户
+  M->>R: run_wealth_advisor(query, id)
+  R->>G: invoke(initial_state)
+  G-->>R: 最终 state
+  R-->>M: result
+  M-->>U: final_response + 模式 + 耗时
+        </pre>
+        <p class="caption">图 5 · 主程序调用链</p>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="paths">
+      <h2>10. 两条路径对照</h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>反应式 reactive</th>
+            <th>深思熟虑 deliberative</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>触发</td>
+            <td><code>processing_mode == "reactive"</code></td>
+            <td>其他（通常 analytical）</td>
+          </tr>
+          <tr>
+            <td>节点序列</td>
+            <td>reactive_agent ⇄ tools → extract_response</td>
+            <td>collect_data → analyze → recommend</td>
+          </tr>
+          <tr>
+            <td>LLM</td>
+            <td><code>llm_with_tools</code></td>
+            <td>裸 <code>llm</code></td>
+          </tr>
+          <tr>
+            <td>中间状态</td>
+            <td><code>messages</code></td>
+            <td><code>market_data</code> → <code>analysis_results</code></td>
+          </tr>
+          <tr>
+            <td>最终字段</td>
+            <td><code>final_response</code>（从 AIMessage 抽取）</td>
+            <td><code>final_response</code>（建议文本）</td>
+          </tr>
+          <tr>
+            <td>典型问题</td>
+            <td>行情、持仓比例、概念解释</td>
+            <td>组合调整、退休规划、教育金方案</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        两条路径互斥：一次 invoke 只会走其中一条，最终都在
+        <code>final_response</code> 汇合，方便 <code>__main__</code> 统一打印。
+      </div>
+
+      <div class="callout warn">
+        <code>CustomerProfile</code> 与部分 <code>current_phase</code> /
+        <code>error</code> 字段在本文件中定义了，但深思熟虑节点并未做严密的前置校验或错误回退图边；
+        实际分流完全由 <code>assess</code> 写出的 <code>processing_mode</code> 决定。
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="faq">
+      <h2>11. 常见知识点</h2>
+      <p class="muted">
+        补充理解运行入口、图是否随 query 变化、以及返回结果格式是否固定。
+      </p>
+
+      <h3>11.1 <code>run_wealth_advisor</code> 在做什么？</h3>
+      <p>
+        这是业务入口：组装初始状态，跑一遍 LangGraph，返回最终 state。
+        不负责命令行交互（交互在 <code>__main__</code>）。
+      </p>
+
+      <div class="code-block">
+        <div class="code-label">run_wealth_advisor · 完整流程</div>
+<pre><code>def run_wealth_advisor(
+    user_query: str, customer_id: str = "customer1"
+) -> Dict[str, Any]:
+    agent = create_wealth_advisor_workflow()
+    customer_profile = SAMPLE_CUSTOMER_PROFILES.get(
+        customer_id, SAMPLE_CUSTOMER_PROFILES["customer1"]
+    )
+
+    initial_state = {
+        "user_query": user_query,
+        "customer_profile": customer_profile,
+        "query_type": None,
+        "processing_mode": None,
+        "market_data": None,
+        "analysis_results": None,
+        "messages": [],
+        "final_response": None,
+        "current_phase": "assess",
+        "error": None,
+    }
+
+    print(agent.get_graph().draw_mermaid())  # 仅调试打印拓扑
+    result = agent.invoke(initial_state)
+    return result</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>步骤</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. 创建工作流</td>
+            <td><code>create_wealth_advisor_workflow()</code> 编译出固定拓扑的图</td>
+          </tr>
+          <tr>
+            <td>2. 取客户画像</td>
+            <td>按 <code>customer_id</code> 查 <code>SAMPLE_CUSTOMER_PROFILES</code>，找不到则用 customer1</td>
+          </tr>
+          <tr>
+            <td>3. 构造 initial_state</td>
+            <td>输入字段有值；中间字段为 <code>None</code>；<code>current_phase="assess"</code></td>
+          </tr>
+          <tr>
+            <td>4. 打印 Mermaid</td>
+            <td><code>draw_mermaid()</code> 只输出图结构，不影响执行</td>
+          </tr>
+          <tr>
+            <td>5. invoke</td>
+            <td>从 <code>assess</code> 跑到 <code>END</code>，返回填好后的完整 state</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>11.2 图是每次一样，还是随 query 变化？</h3>
+      <div class="callout">
+        <strong>图的结构每次都一样</strong>；query 只决定<strong>走图里的哪条路</strong>，不会按问题重建一张新图。
+      </div>
+
+      <ul>
+        <li>
+          <strong>固定的是拓扑</strong>：入口始终 <code>assess</code>；反应式分支与深思熟虑分支的节点、边都在
+          <code>create_wealth_advisor_workflow</code> 里写死。所以每次
+          <code>draw_mermaid()</code> 打印出来的图长得一样。
+        </li>
+        <li>
+          <strong>随 query 变的是路由</strong>：<code>assess_query</code> 根据问题写出
+          <code>processing_mode</code>；为 <code>"reactive"</code> 走反应式，否则走深思熟虑。
+          这是同一张图上的条件边，不是换图。
+        </li>
+      </ul>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  Q["不同 query"] --> ASSESS["同一张图: assess"]
+  ASSESS -->|reactive| PATH1["反应式路径"]
+  ASSESS -->|deliberative| PATH2["深思熟虑路径"]
+  PATH1 --> OUT["final_response"]
+  PATH2 --> OUT
+        </pre>
+        <p class="caption">图 6 · 固定拓扑 + 按 query 选路</p>
+      </div>
+
+      <p class="muted">
+        类比：地铁线路图是固定的；query 只决定你从哪站换乘、坐哪条线。
+      </p>
+
+      <h3>11.3 返回结果的格式是固定的吗？</h3>
+      <div class="callout">
+        <strong>外壳格式固定，里面填了什么因路径而异。</strong>
+        <code>invoke</code> 返回的始终是 <code>WealthAdvisorState</code> 风格的字典（同一套键），
+        不是每种 query 换一种 JSON schema。
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>含义</th>
+            <th>是否每次都有有效值</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>user_query</code> / <code>customer_profile</code></td>
+            <td>输入原样带回</td>
+            <td>是</td>
+          </tr>
+          <tr>
+            <td><code>query_type</code> / <code>processing_mode</code></td>
+            <td>评估阶段写入</td>
+            <td>是（评估成功时）</td>
+          </tr>
+          <tr>
+            <td><code>messages</code></td>
+            <td>反应式对话与工具历史</td>
+            <td>主要在反应式路径有内容</td>
+          </tr>
+          <tr>
+            <td><code>market_data</code> / <code>analysis_results</code></td>
+            <td>深思熟虑中间产物</td>
+            <td>主要在深思熟虑路径有内容</td>
+          </tr>
+          <tr>
+            <td><code>final_response</code></td>
+            <td>最终给用户的文本</td>
+            <td>两条路径都会写；内容随 LLM 变化</td>
+          </tr>
+          <tr>
+            <td><code>current_phase</code> / <code>error</code></td>
+            <td>控制与错误信息</td>
+            <td>视执行情况</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <ul>
+        <li>
+          <strong>结构固定</strong>：调用方可以稳定读取
+          <code>result["final_response"]</code>、<code>result["processing_mode"]</code>。
+        </li>
+        <li>
+          <strong>字段填充不固定</strong>：反应式时 <code>market_data</code> /
+          <code>analysis_results</code> 多半仍是 <code>None</code>；深思熟虑时
+          <code>messages</code> 往往仍是空列表。
+        </li>
+        <li>
+          <strong>文本内容不固定</strong>：<code>final_response</code> 是自然语言字符串，长度与写法随模型输出变化。
+        </li>
+        <li>
+          <strong>内层 JSON 未强校验</strong>：如 <code>analysis_results</code> 由 Prompt +
+          <code>JsonOutputParser</code> 约定，未用 Pydantic 强制校验，键可能略有波动。
+        </li>
+      </ul>
+
+      <div class="callout warn">
+        对接上层时：以 <code>final_response</code> + <code>processing_mode</code> 为稳定契约；
+        不要假设两个分支的中间字段每次都齐全。
+      </div>
+    </section>
+
+
+
+
+    <!-- 12 -->
+    <section id="runs">
+      <h2>12. 实测运行记录</h2>
+      <p>
+        以下按<strong>实际执行步骤</strong>标注 Step1、Step2…；每步说明节点功能，并展示该节点
+        <strong>返回、写入 state 的 JSON 增量</strong>（与源码 <code>return {...}</code> 对应）。
+        数据来自 <code>run_records.json</code>（客户 <code>customer1</code> / 平衡型）。
+      </p>
+      <p class="muted">客户画像摘要：C10012345 / 平衡型 / 中期 / 组合 150 万；股票 40%、债券 30%、现金 10%、另类 20%。</p>
+
+      <h3>案例 A · 反应式路径</h3>
+      <p><strong>问题：</strong>我的投资组合中股票占比是多少？</p>
+      <p class="muted">路径总览：<code>assess → reactive_agent → tools → reactive_agent → extract_response → END</code></p>
+      
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 1</span>
+          <span class="run-step-node">assess / assess_query</span>
+          <span class="run-step-title">情境评估与分流</span>
+        </div>
+        <p class="run-step-desc">协调层根据用户问题判断查询类型与处理模式，决定走反应式还是深思熟虑。本例判定为紧急查询 + 反应式。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;query_type&quot;: &quot;emergency&quot;,
+  &quot;processing_mode&quot;: &quot;reactive&quot;
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 2</span>
+          <span class="run-step-node">reactive_agent</span>
+          <span class="run-step-title">首次调用带工具 LLM</span>
+        </div>
+        <p class="run-step-desc">组装系统提示与用户问题，调用 <code>llm_with_tools</code>。本步尚未给出最终文本，而是发起工具调用 <code>query_portfolio_allocation</code>。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;messages&quot;: [
+    {
+      &quot;type&quot;: &quot;AIMessage&quot;,
+      &quot;content&quot;: &quot;&quot;,
+      &quot;tool_calls&quot;: [
+        {
+          &quot;name&quot;: &quot;query_portfolio_allocation&quot;,
+          &quot;args&quot;: {
+            &quot;asset_type&quot;: &quot;股票&quot;
+          },
+          &quot;id&quot;: &quot;call_21f34e48854948b6b4126a&quot;,
+          &quot;type&quot;: &quot;tool_call&quot;
+        }
+      ]
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 3</span>
+          <span class="run-step-node">tools / ToolNode</span>
+          <span class="run-step-title">执行工具并回写结果</span>
+        </div>
+        <p class="run-step-desc">条件路由 <code>should_continue_tools</code> 发现存在 <code>tool_calls</code>，进入工具节点执行查询，将 ToolMessage 追加进 <code>messages</code>。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;messages&quot;: [
+    {
+      &quot;type&quot;: &quot;ToolMessage&quot;,
+      &quot;content&quot;: &quot;股票在投资组合中的配置比例为: 40%&quot;,
+      &quot;name&quot;: &quot;query_portfolio_allocation&quot;,
+      &quot;tool_call_id&quot;: &quot;call_21f34e48854948b6b4126a&quot;
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 4</span>
+          <span class="run-step-node">reactive_agent</span>
+          <span class="run-step-title">再次调用 LLM 生成回答</span>
+        </div>
+        <p class="run-step-desc">带着工具结果再次进入反应式节点；模型综合 ToolMessage 产出自然语言回答，此时无新的 tool_calls，路由转向提取响应。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;messages&quot;: [
+    {
+      &quot;type&quot;: &quot;AIMessage&quot;,
+      &quot;content&quot;: &quot;股票在您的投资组合中的配置比例为 40%。如果您有任何调整的需求或者想要了解更多详情，请随时告诉我。&quot;
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 5</span>
+          <span class="run-step-node">extract_response / extract_reactive_response</span>
+          <span class="run-step-title">提取最终回复并结束</span>
+        </div>
+        <p class="run-step-desc">从 messages 倒序找到最后一条有内容的 AIMessage，写入 <code>final_response</code>，随后进入 END。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;final_response&quot;: &quot;股票在您的投资组合中的配置比例为 40%。如果您有任何调整的需求或者想要了解更多详情，请随时告诉我。&quot;
+}</code></pre>
+        </div>
+      </div>
+
+
+      <div class="callout">
+        案例 A 对照：评估后走反应式；中间靠 <code>messages</code> 累积工具调用；
+        <code>market_data</code> / <code>analysis_results</code> 全程为 null。
+      </div>
+
+      <h3>案例 B · 深思熟虑路径</h3>
+      <p><strong>问题：</strong>根据当前市场情况，我应该如何调整投资组合以应对可能的经济衰退？</p>
+      <p class="muted">路径总览：<code>assess → collect_data → analyze → recommend → END</code></p>
+      
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 1</span>
+          <span class="run-step-node">assess / assess_query</span>
+          <span class="run-step-title">情境评估与分流</span>
+        </div>
+        <p class="run-step-desc">协调层判定本问需要深度分析，选择深思熟虑模式，条件边导向 <code>collect_data</code>。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;query_type&quot;: &quot;analytical&quot;,
+  &quot;processing_mode&quot;: &quot;deliberative&quot;
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 2</span>
+          <span class="run-step-node">collect_data</span>
+          <span class="run-step-title">数据收集</span>
+        </div>
+        <p class="run-step-desc">根据问题与客户画像，确定需收集的数据类型并生成（模拟）市场数据，写入 <code>market_data</code>，推进 phase 到 analyze。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;market_data&quot;: {
+    &quot;asset_performance&quot;: {
+      &quot;stocks&quot;: {
+        &quot;annual_return&quot;: 5.2,
+        &quot;volatility&quot;: 12
+      },
+      &quot;bonds&quot;: {
+        &quot;annual_return&quot;: 2.8,
+        &quot;volatility&quot;: 4
+      },
+      &quot;cash_equivalents&quot;: {
+        &quot;annual_return&quot;: 0.5,
+        &quot;volatility&quot;: 0.3
+      },
+      &quot;alternative_investments&quot;: {
+        &quot;annual_return&quot;: 7.5,
+        &quot;volatility&quot;: 15
+      }
+    },
+    &quot;economic_indicators&quot;: {
+      &quot;GDP_growth_rate&quot;: 2.5,
+      &quot;inflation_rate&quot;: 2.2,
+      &quot;unemployment_rate&quot;: 4.1
+    },
+    &quot;industry_trends&quot;: {
+      &quot;technology&quot;: {
+        &quot;growth_projection&quot;: 8,
+        &quot;risk_level&quot;: &quot;中等&quot;
+      },
+      &quot;sustainable_energy&quot;: {
+        &quot;growth_projection&quot;: 10,
+        &quot;risk_level&quot;: &quot;低&quot;
+      }
+    },
+    &quot;historical_returns&quot;: {
+      &quot;last_5_years&quot;: {
+        &quot;average_annual_return&quot;: 6.3,
+        &quot;best_year&quot;: 9.5,
+        &quot;worst_year&quot;: -3.2
+      }
+    },
+    &quot;risk_metrics&quot;: {
+      &quot;market_volatility_index&quot;: 18,
+      &quot;credit_spread_changes&quot;: 0.25
+    }
+  },
+  &quot;current_phase&quot;: &quot;analyze&quot;
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 3</span>
+          <span class="run-step-node">analyze / analyze_data</span>
+          <span class="run-step-title">深度分析</span>
+        </div>
+        <p class="run-step-desc">结合客户画像与 market_data 做投资分析，产出结构化分析结果写入 <code>analysis_results</code>，推进 phase 到 recommend。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;analysis_results&quot;: {
+    &quot;market_assessment&quot;: {
+      &quot;summary&quot;: &quot;当前经济环境显示出温和增长的趋势（GDP增长率2.5%），通胀率（2.2%）和失业率（4.1%）均处于可控范围内。然而，考虑到市场波动性指数（18）略高于平均水平，这可能预示着未来存在一定的不确定性。&quot;,
+      &quot;details&quot;: {
+        &quot;economic_indicators&quot;: {
+          &quot;GDP_growth_rate&quot;: 2.5,
+          &quot;inflation_rate&quot;: 2.2,
+          &quot;unemployment_rate&quot;: 4.1
+        },
+        &quot;risk_metrics&quot;: {
+          &quot;market_volatility_index&quot;: 18,
+          &quot;credit_spread_changes&quot;: 0.25
+        }
+      }
+    },
+    &quot;portfolio_analysis&quot;: {
+      &quot;overview&quot;: &quot;客户的总投资价值为150万元人民币，目前的投资组合分配较为均衡，但股票比例稍高，在面对潜在经济衰退时可能会面临较大风险。&quot;,
+      &quot;allocation_details&quot;: {
+        &quot;stocks&quot;: 0.4,
+        &quot;bonds&quot;: 0.3,
+        &quot;cash&quot;: 0.1,
+        &quot;alternative_investments&quot;: 0.2
+      },
+      &quot;performance_vs_market&quot;: {
+        &quot;annual_return_comparison&quot;: &quot;客户投资组合的预期年化回报率为约5.7%，与过去五年平均年化回报率6.3%相比略低，但仍然保持在一个健康水平。&quot;,
+        &quot;volatility_comparison&quot;: &quot;组合整体波动性估计约为9.5%，低于股票市场的波动性（12%），表明分散投资有效降低了风险。&quot;
+      }
+    },
+    &quot;recommendations&quot;: [
+      {
+        &quot;action&quot;: &quot;增加债券配置&quot;,
+        &quot;reason&quot;: &quot;鉴于经济增长放缓的可能性，增加固定收益类资产可以提供更稳定的现金流，并减少整体投资组合的风险。&quot;,
+        &quot;target_allocation&quot;: 0.4
+      },
+      {
+        &quot;action&quot;: &quot;维持或略微降低股票仓位&quot;,
+        &quot;reason&quot;: &quot;尽管科技行业展现出强劲的增长潜力，但在不确定时期应谨慎对待高风险资产。&quot;,
+        &quot;target_allocation&quot;: 0.3
+      },
+      {
+        &quot;action&quot;: &quot;考虑增加可持续能源领域的ESG投资&quot;,
+        &quot;reason&quot;: &quot;此领域不仅符合客户的偏好，而且具有较低的风险等级及良好的增长前景。&quot;,
+        &quot;target_allocation&quot;: 0.1
+      },
+      {
+        &quot;action&quot;: &quot;保留足够的现金流动性&quot;,
+        &quot;reason&quot;: &quot;保持一定比例的现金可以帮助抓住市场机会或是应对紧急资金需求。&quot;,
+        &quot;target_allocation&quot;: 0.2
+      }
+    ],
+    &quot;risk_analysis&quot;: {
+      &quot;current_risk_profile&quot;: &quot;平衡型投资者，能够接受中等程度的价格波动以换取长期资本增值。&quot;,
+      &quot;future_risks&quot;: &quot;随着经济形势的变化，特别是如果出现衰退迹象，则需要更加关注信用利差扩大对债券投资的影响以及股市可能经历更大调整。&quot;,
+      &quot;mitigation_strategies&quot;: &quot;通过调整资产配置来平衡风险与回报，同时密切关注宏观经济指标变化，适时作出调整。&quot;
+    },
+    &quot;expected_outcomes&quot;: {
+      &quot;short_term&quot;: &quot;短期内，由于增加了更为保守的投资比例，预计收益率将有所下降，但同时也降低了亏损的概率。&quot;,
+      &quot;long_term&quot;: &quot;长期来看，这种调整有助于构建一个更具弹性的投资组合，既能够抵御经济下行周期带来的冲击，也能在复苏阶段抓住增长机遇。&quot;,
+      &quot;return_projection&quot;: &quot;基于新的资产配置建议，预计未来一年内的净回报率大约为4%-6%之间。&quot;
+    }
+  },
+  &quot;current_phase&quot;: &quot;recommend&quot;
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="run-step">
+        <div class="run-step-head">
+          <span class="run-step-badge">Step 4</span>
+          <span class="run-step-node">recommend / generate_recommendations</span>
+          <span class="run-step-title">生成客户可读建议</span>
+        </div>
+        <p class="run-step-desc">将分析结果整理为面向客户的自然语言建议，写入 <code>final_response</code>，phase 记为 respond，随后进入 END。本路径 <code>messages</code> 保持为空。</p>
+        <div class="code-block">
+          <div class="code-label">本步返回 JSON（节点写入 state 的增量）</div>
+<pre><code>{
+  &quot;final_response&quot;: &quot;尊敬的客户，\n\n感谢您对我们服务的信任。根据当前市场状况及您的个人投资偏好，我们为您制定了以下投资策略调整建议：\n\n### 1. 总体投资策略\n考虑到未来可能存在一定的经济不确定性，我们的目标是通过适当调整资产配置来增强您投资组合的安全性与灵活性，同时继续追求合理的回报。这包括增加债券比例以提供稳定的现金流支持，以及关注那些符合您ESG投资偏好的领域。\n\n### 2. 具体行动步骤\n- **提高债券投资**：将目前债券占总投资额的比例从30%提升至40%，选择信用等级较高的政府或企业债券。\n- **调整股票持有量**：虽然科技行业长期看涨，但短期内可能波动较大。因此建议将股票占比由40%略微降至30%左右。\n- **增加可持续能源项目投资**：鉴于您对环境友好型项目的兴趣，我们提议将这部分的投资比重设定为10%。\n- **保持充足现金储备**：确保至少有20%的资金以现金形式存在，以便应对突发情况或捕捉未来的投资机会。\n\n### 3. 资产配置建议\n- **债券**: 40%\n- **股票**: 30%\n- **ESG相关（如可再生能源）**: 10%\n- **现金及其他流动性高的资产**: 20%\n\n### 4. 风险管理策略\n- 定期审查投资组合的表现，并根据宏观经济变化及时做出相应调整。\n- 采用多元化投资策略减少单一市场或行业的风险暴露。\n- 关注全球经济指标，特别是利率走势、通货膨胀率等关键因素的变化，适时优化资产配置。\n\n### 5. 时间框架\n这些调整旨在中长期内有效执行，即至少在未来1-3年内维持这样的配置结构。当然，随着外部条件的发展，我们将持续评估并适时提出新的建议。\n\n### 6. 预期收益\n基于上述建议实施后的新资产配置方案，预计在未来一年内可以获得大约4%-6%之间的净回报率。虽然这比之前略低，但在当前不确定性的环境下提供了更好的保护作用。\n\n### 7. 后续跟进计划\n- 每季度进行一次投资组合绩效回顾会议，讨论表现情况及是否需要进一步调整。\n- 我们的专业团队将持续监控市场动态，一旦发现重要信息变动，将第一时间通知您，并共同探讨下一步的最佳操作方案。\n\n希望以上建议能够帮助您更好地规划财务未来。如果有任何疑问或需要进一步讨论的地方，请随时联系我们。期待着与您携手共创美好明天！\n\n祝好，\n[您的名字]  \n[您的职位]  \n[联系方式]&quot;,
+  &quot;current_phase&quot;: &quot;respond&quot;
+}</code></pre>
+        </div>
+      </div>
+
+
+      <div class="callout">
+        案例 B 对照：评估后走深思熟虑三步流水线；不经过 tools；
+        <code>messages</code> 为空，最终靠 <code>final_response</code> 交付建议文本。
+      </div>
+    </section>
+
+    <footer>
+      文档对应源码：<code>05_LangGraph/混合式.py</code> · Prompt：
+      <code>prompts/混合式_prompts.yaml</code> · Mermaid 需联网加载 CDN。
+    </footer>
+  </div>
+</body>
+</html>

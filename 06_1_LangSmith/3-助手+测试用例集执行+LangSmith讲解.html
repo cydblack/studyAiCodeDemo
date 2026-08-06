@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LangSmith 测试用例集执行 · 代码讲解</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+    const LIGHT_TEXT = "#ffffff";
+    const DARK_TEXT = "#1a2430";
+
+    function parseCssColor(value) {
+      if (!value || value === "none" || value === "transparent") return null;
+      const v = String(value).trim();
+      if (v.startsWith("#")) {
+        let hex = v.slice(1);
+        if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+        if (hex.length === 8) hex = hex.slice(0, 6);
+        if (hex.length !== 6) return null;
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+      const m = v.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+      if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+      return null;
+    }
+
+    function relativeLuminance({ r, g, b }) {
+      const toLinear = (c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    }
+
+    function textColorForBg(bg) {
+      return relativeLuminance(bg) > 0.42 ? DARK_TEXT : LIGHT_TEXT;
+    }
+
+    function shapeFill(shape) {
+      if (!shape) return null;
+      return parseCssColor(
+        shape.getAttribute("fill") ||
+        shape.style.fill ||
+        getComputedStyle(shape).fill
+      );
+    }
+
+    function findBackgroundColor(el, diagramRoot) {
+      const noteOrLabel = el.closest("g.note, g.label, .note, .activation0, .activation1, .activation2");
+      if (noteOrLabel) {
+        const rect = noteOrLabel.querySelector("rect");
+        const c = shapeFill(rect);
+        if (c) return c;
+      }
+
+      const nodeG = el.closest("g.node, g.actor, g.cluster");
+      if (nodeG) {
+        const shape = nodeG.querySelector(
+          ":scope > rect, :scope > polygon, :scope > circle, :scope > ellipse, :scope > path"
+        );
+        const c = shapeFill(shape);
+        if (c) return c;
+        if (nodeG.classList.contains("cluster")) {
+          const c2 = shapeFill(nodeG.querySelector("rect"));
+          if (c2) return c2;
+        }
+      }
+
+      const edgeLabel = el.closest("g.edgeLabel");
+      if (edgeLabel) {
+        const c = shapeFill(edgeLabel.querySelector("rect"));
+        if (c) return c;
+      }
+
+      let cur = el.parentElement;
+      while (cur && cur !== diagramRoot) {
+        if (cur.tagName === "g") {
+          for (const shape of cur.querySelectorAll(":scope > rect")) {
+            const fillAttr = shape.getAttribute("fill");
+            if (!fillAttr || fillAttr === "none") continue;
+            const c = parseCssColor(fillAttr);
+            if (c) return c;
+          }
+        }
+        cur = cur.parentElement;
+      }
+
+      const diagramBox = diagramRoot.closest(".diagram");
+      if (diagramBox) {
+        const bg = parseCssColor(getComputedStyle(diagramBox).backgroundColor);
+        if (bg) return bg;
+      }
+      return { r: 22, g: 32, b: 42 };
+    }
+
+    function applyTextColor(el, color) {
+      if (el instanceof SVGElement) {
+        el.setAttribute("fill", color);
+        el.style.fill = color;
+      }
+      el.style.setProperty("color", color, "important");
+    }
+
+    function adaptMermaidTextContrast() {
+      document.querySelectorAll(".diagram .mermaid").forEach((root) => {
+        root.querySelectorAll(
+          "text, tspan, .nodeLabel, .edgeLabel, .label, .cluster-label, .messageText, .noteText, .actor, .loopText, foreignObject div, foreignObject span, foreignObject p"
+        ).forEach((el) => {
+          if (el.closest(".caption")) return;
+          const color = textColorForBg(findBackgroundColor(el, root));
+          applyTextColor(el, color);
+          if (el.tagName?.toLowerCase() === "div" || el.tagName?.toLowerCase() === "span") {
+            el.querySelectorAll("*").forEach((child) => applyTextColor(child, color));
+          }
+        });
+
+        root.querySelectorAll("g.note, g.label").forEach((g) => {
+          const rect = g.querySelector("rect");
+          const bg = shapeFill(rect);
+          if (!bg) return;
+          const color = textColorForBg(bg);
+          g.querySelectorAll("text, tspan, foreignObject, foreignObject *").forEach((t) => {
+            applyTextColor(t, color);
+          });
+        });
+      });
+    }
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        primaryColor: "#1e3a4a",
+        primaryTextColor: "#ffffff",
+        primaryBorderColor: "#3d6a7a",
+        mainBkg: "#1e3a4a",
+        nodeBorder: "#3d6a7a",
+        secondaryColor: "#243848",
+        secondaryTextColor: "#ffffff",
+        tertiaryColor: "#2a4050",
+        tertiaryTextColor: "#ffffff",
+        clusterBkg: "#1a303c",
+        clusterBorder: "#4a7080",
+        titleColor: "#ffffff",
+        lineColor: "#8fadc0",
+        textColor: "#ffffff",
+        edgeLabelBackground: "#1e3a4a",
+        actorBkg: "#1e3a4a",
+        actorBorder: "#3d6a7a",
+        actorTextColor: "#ffffff",
+        actorLineColor: "#8fadc0",
+        signalColor: "#c5d8e2",
+        signalTextColor: "#ffffff",
+        labelBoxBkgColor: "#243848",
+        labelBoxBorderColor: "#4a7080",
+        labelTextColor: "#ffffff",
+        loopTextColor: "#ffffff",
+        noteBkgColor: "#243848",
+        noteTextColor: "#ffffff",
+        noteBorderColor: "#4a7080",
+        activationBkgColor: "#2a4a5a",
+        activationBorderColor: "#3d6a7a",
+        sequenceNumberColor: "#ffffff",
+        background: "#162028",
+        fontFamily: "IBM Plex Sans, sans-serif"
+      },
+      flowchart: { curve: "basis", padding: 18 },
+      sequence: {
+        actorMargin: 48,
+        messageMargin: 36,
+        noteMargin: 12,
+        mirrorActors: false,
+        useMaxWidth: true
+      }
+    });
+
+    function enhanceDiagramSourceView() {
+      document.querySelectorAll(".diagram").forEach((box) => {
+        const mermaidEl = box.querySelector(".mermaid");
+        if (!mermaidEl || box.querySelector(".diagram-toolbar")) return;
+
+        const source = (mermaidEl.textContent || "").trim();
+        if (!source) return;
+
+        const toolbar = document.createElement("div");
+        toolbar.className = "diagram-toolbar";
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "diagram-src-btn";
+        toggleBtn.textContent = "查看源代码";
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "diagram-copy-btn";
+        copyBtn.textContent = "复制";
+        copyBtn.hidden = true;
+
+        toolbar.appendChild(toggleBtn);
+        toolbar.appendChild(copyBtn);
+
+        const sourcePanel = document.createElement("pre");
+        sourcePanel.className = "diagram-source";
+        sourcePanel.hidden = true;
+        sourcePanel.textContent = source;
+
+        box.insertBefore(toolbar, box.firstChild);
+        const caption = box.querySelector(".caption");
+        if (caption) box.insertBefore(sourcePanel, caption);
+        else box.appendChild(sourcePanel);
+
+        toggleBtn.addEventListener("click", () => {
+          const willShow = sourcePanel.hidden;
+          sourcePanel.hidden = !willShow;
+          copyBtn.hidden = !willShow;
+          toggleBtn.textContent = willShow ? "收起源代码" : "查看源代码";
+          toggleBtn.setAttribute("aria-expanded", willShow ? "true" : "false");
+        });
+
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(source);
+            copyBtn.textContent = "已复制";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          } catch {
+            copyBtn.textContent = "复制失败";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          }
+        });
+      });
+    }
+
+    enhanceDiagramSourceView();
+    await mermaid.run({ querySelector: ".mermaid" });
+    adaptMermaidTextContrast();
+    requestAnimationFrame(adaptMermaidTextContrast);
+    setTimeout(adaptMermaidTextContrast, 200);
+    setTimeout(adaptMermaidTextContrast, 600);
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --bg-deep: #e5e0d4;
+      --ink: #1a2430;
+      --ink-muted: #4a5868;
+      --accent: #2a6a7a;
+      --accent-soft: #d5e8ee;
+      --line: #c5bdb0;
+      --card: #faf8f3;
+      --code-bg: #1a2830;
+      --code-fg: #d5e4ea;
+      --warn: #8a4b1f;
+      --diagram-bg: #162028;
+      --reactive: #2a6a7a;
+      --deliberative: #6a5a3a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 70% 45% at 0% 0%, #d5e8ee 0%, transparent 55%),
+        radial-gradient(ellipse 50% 35% at 100% 5%, #e8dfd0 0%, transparent 50%),
+        var(--bg);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    header.hero {
+      margin-bottom: 2.5rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    header.hero .brand {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(2rem, 5vw, 2.7rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    header.hero .lede {
+      color: var(--ink-muted);
+      max-width: 42em;
+      font-size: 1.05rem;
+    }
+
+    header.hero .meta {
+      margin-top: 1.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    header.hero .meta span {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+    }
+
+    nav.toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 2.75rem;
+    }
+
+    nav.toc h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-muted);
+      margin-bottom: 0.7rem;
+    }
+
+    nav.toc ol {
+      padding-left: 1.25rem;
+      columns: 2;
+      gap: 1.5rem;
+    }
+
+    nav.toc a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.94rem;
+    }
+
+    nav.toc a:hover {
+      text-decoration: underline;
+    }
+
+    section {
+      margin-bottom: 3.25rem;
+    }
+
+    section>h2 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      padding-bottom: 0.45rem;
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+
+    section>h3 {
+      font-size: 1.08rem;
+      font-weight: 600;
+      margin: 1.6rem 0 0.7rem;
+    }
+
+    p {
+      margin-bottom: 0.95rem;
+    }
+
+    p.muted {
+      color: var(--ink-muted);
+    }
+
+    ul,
+    ol {
+      margin: 0 0 1rem 1.3rem;
+    }
+
+    li {
+      margin-bottom: 0.3rem;
+    }
+
+    .diagram {
+      background: var(--diagram-bg);
+      border: 1px solid #2a3a45;
+      padding: 1.4rem 1rem;
+      margin: 1.2rem 0 1.6rem;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .diagram-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .diagram-src-btn,
+    .diagram-copy-btn {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      padding: 0.28rem 0.65rem;
+      border: 1px solid #4a7080;
+      background: #1e3a4a;
+      color: #e8f2f6;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    .diagram-src-btn:hover,
+    .diagram-copy-btn:hover {
+      background: #2a4a5a;
+    }
+
+    .diagram-source {
+      display: block;
+      margin: 0 0 0.85rem;
+      padding: 0.9rem 1rem;
+      background: #0f181e;
+      border: 1px solid #2a3a45;
+      border-left: 3px solid #5a9aaa;
+      color: #d5e4ea;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 22rem;
+      overflow: auto;
+    }
+
+    .diagram-source[hidden] {
+      display: none !important;
+    }
+
+    .diagram .caption {
+      font-size: 0.78rem;
+      color: #9bb5c0 !important;
+      text-align: center;
+      margin-top: 0.7rem;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    .diagram .mermaid g.note>rect,
+    .diagram .mermaid g.label>rect,
+    .diagram .mermaid .edgeLabel>rect,
+    .diagram .mermaid g.cluster>rect {
+      fill: #243848 !important;
+      stroke: #4a7080 !important;
+    }
+
+    .diagram .mermaid g.note text,
+    .diagram .mermaid g.note tspan,
+    .diagram .mermaid g.note foreignObject,
+    .diagram .mermaid g.note foreignObject *,
+    .diagram .mermaid .noteText,
+    .diagram .mermaid g.label text,
+    .diagram .mermaid g.label tspan,
+    .diagram .mermaid g.label foreignObject,
+    .diagram .mermaid g.label foreignObject *,
+    .diagram .mermaid g.actor text,
+    .diagram .mermaid g.actor tspan,
+    .diagram .mermaid .actor,
+    .diagram .mermaid .cluster-label,
+    .diagram .mermaid .edgeLabel,
+    .diagram .mermaid .nodeLabel,
+    .diagram .mermaid text,
+    .diagram .mermaid tspan {
+      fill: #ffffff !important;
+      color: #ffffff !important;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.4rem;
+      font-size: 0.9rem;
+      background: var(--card);
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 0.6rem 0.8rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--bg-deep);
+      font-weight: 600;
+      font-size: 0.84rem;
+    }
+
+    code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.86em;
+      background: var(--accent-soft);
+      padding: 0.08em 0.32em;
+      border-radius: 2px;
+      color: var(--accent);
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      padding: 0.95rem 1.1rem;
+      margin: 1.15rem 0;
+      font-size: 0.95rem;
+    }
+
+    .callout.warn {
+      background: #f3e6d6;
+      border-left-color: var(--warn);
+    }
+
+    .method-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      margin: 1rem 0 1.35rem;
+      padding: 1.1rem 1.2rem;
+    }
+
+    .method-card h4 {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.98rem;
+      color: var(--accent);
+      margin-bottom: 0.45rem;
+    }
+
+    .method-card .sig {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+      margin-bottom: 0.65rem;
+      word-break: break-all;
+    }
+
+    .method-meta {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 0.35rem 0.75rem;
+      font-size: 0.9rem;
+      margin: 0.6rem 0;
+    }
+
+    .method-meta .k {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      padding-top: 0.15rem;
+    }
+
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin: 1.2rem 0;
+    }
+
+    .layer-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--accent);
+      padding: 1rem;
+    }
+
+    .layer-card.delib {
+      border-top-color: var(--deliberative);
+    }
+
+    .layer-card.edge {
+      border-top-color: #8a4b1f;
+    }
+
+    .layer-card .num {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+    }
+
+    .layer-card.delib .num {
+      color: var(--deliberative);
+    }
+
+    .layer-card.edge .num {
+      color: var(--warn);
+    }
+
+    .layer-card h4 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      margin: 0.3rem 0 0.4rem;
+      font-size: 1rem;
+    }
+
+    .layer-card p {
+      font-size: 0.86rem;
+      color: var(--ink-muted);
+      margin: 0;
+    }
+
+    footer {
+      margin-top: 3.5rem;
+      padding-top: 1.3rem;
+      border-top: 1px solid var(--line);
+      color: var(--ink-muted);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 700px) {
+      nav.toc ol {
+        columns: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="brand">LangSmith 测试用例集执行</div>
+      <p class="lede">
+        讲解 <code>3-助手+测试用例集执行+LangSmith.py</code>：如何把本地测试用例推到 LangSmith 数据集，
+        批量跑投顾 Agent，再用评估器打分，并支持单测与实验对比。
+      </p>
+      <div class="meta">
+        <span>Dataset</span>
+        <span>evaluate()</span>
+        <span>RunEvaluator</span>
+        <span>Experiment</span>
+      </div>
+    </header>
+
+    <nav class="toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">模块定位与分层</a></li>
+        <li><a href="#relations">方法关系总图</a></li>
+        <li><a href="#main-flow">主流程时序</a></li>
+        <li><a href="#data">测试用例数据</a></li>
+        <li><a href="#helpers">辅助读取函数</a></li>
+        <li><a href="#evaluators">评估器</a></li>
+        <li><a href="#apis">核心 API 方法</a></li>
+        <li><a href="#callgraph">调用依赖图</a></li>
+      </ol>
+    </nav>
+
+    <!-- ==================== 1. 概览 ==================== -->
+    <section id="overview">
+      <h2>1. 模块定位与分层</h2>
+      <p>
+        本脚本不实现投顾 Agent 本身，而是站在 Agent 之上做「测试与评估」：
+        用例定义 → 数据集同步 → 批量推理 → 评分 →（可选）实验对比。
+        Agent 能力来自动态加载的 <code>1-hybrid_wealth_advisor_langgraph_langsmith.py</code> 中的
+        <code>run_wealth_advisor</code>。
+      </p>
+
+      <div class="layer-grid">
+        <div class="layer-card">
+          <div class="num">L0 · 配置</div>
+          <h4>LangSmith Client</h4>
+          <p>读环境变量，决定能否连云端做 Dataset / Experiment。</p>
+        </div>
+        <div class="layer-card">
+          <div class="num">L1 · 数据</div>
+          <h4>本地用例常量</h4>
+          <p>反应式 / 深思熟虑 / 边界三类用例，合并为 ALL_TEST_CASES。</p>
+        </div>
+        <div class="layer-card delib">
+          <div class="num">L2 · 评估</div>
+          <h4>RunEvaluator</h4>
+          <p>处理模式是否正确、回复是否覆盖期望关键词。</p>
+        </div>
+        <div class="layer-card edge">
+          <div class="num">L3 · 编排</div>
+          <h4>create / evaluate / compare</h4>
+          <p>数据集准备、批量评估、单测、实验对比，由 __main__ 串联。</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  subgraph ENV["环境与依赖"]
+    ENV_VARS["LANGSMITH_API_KEY<br/>LANGCHAIN_TRACING_V2"]
+    CLIENT["Client 客户端"]
+    AGENT["run_wealth_advisor<br/>来自助手脚本"]
+  end
+
+  subgraph DATA["本地用例"]
+    R["REACTIVE_TEST_CASES"]
+    D["DELIBERATIVE_TEST_CASES"]
+    E["EDGE_CASE_TEST_CASES"]
+    ALL["ALL_TEST_CASES"]
+    R --> ALL
+    D --> ALL
+    E --> ALL
+  end
+
+  subgraph CORE["本模块核心"]
+    CREATE["create_test_dataset"]
+    RUN_EVAL["run_evaluation"]
+    SINGLE["run_single_test"]
+    COMPARE["compare_experiments"]
+    EVALS["ProcessingModeEvaluator<br/>ResponseCompletenessEvaluator"]
+  end
+
+  ENV_VARS --> CLIENT
+  CLIENT --> CREATE
+  CLIENT --> RUN_EVAL
+  CLIENT --> COMPARE
+  ALL --> CREATE
+  CREATE -->|"dataset_name"| RUN_EVAL
+  EVALS --> RUN_EVAL
+  RUN_EVAL -->|"内嵌 test_function"| AGENT
+  SINGLE --> AGENT
+        </pre>
+        <p class="caption">图 1 · 模块分层：环境 / 用例 / 评估器 / 编排 API</p>
+      </div>
+    </section>
+
+    <!-- ==================== 2. 关系总图 ==================== -->
+    <section id="relations">
+      <h2>2. 方法关系总图</h2>
+      <p>
+        箭头表示「谁调用谁 / 谁依赖谁」。虚线表示辅助读取，实线表示主业务调用。
+      </p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  MAIN["__main__"]
+
+  MAIN -->|"步骤1"| CREATE["create_test_dataset"]
+  MAIN -->|"步骤2"| RUN["run_evaluation"]
+
+  CREATE --> ALL["ALL_TEST_CASES"]
+  CREATE --> LS1["client.create_dataset<br/>create_example<br/>list_examples"]
+
+  RUN --> TF["test_function 内嵌"]
+  RUN --> EV1["ProcessingModeEvaluator"]
+  RUN --> EV2["ResponseCompletenessEvaluator"]
+  RUN --> LS2["langsmith.evaluate"]
+
+  TF --> GI["_get_example_inputs"]
+  TF --> AGENT["run_wealth_advisor"]
+
+  EV1 --> GO["_get_example_outputs"]
+  EV2 --> GO
+
+  SINGLE["run_single_test"] --> AGENT
+  CMP["compare_experiments"] --> LS3["client.list_runs"]
+        </pre>
+        <p class="caption">图 2 · 方法 / 类 / LangSmith API 依赖关系</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>角色</th>
+            <th>符号</th>
+            <th>职责一句话</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>入口</td>
+            <td><code>__main__</code></td>
+            <td>校验环境 → 准备数据集 → 启动评估 → 打印查看指引</td>
+          </tr>
+          <tr>
+            <td>数据侧</td>
+            <td><code>create_test_dataset</code></td>
+            <td>把本地 ALL_TEST_CASES 同步到 LangSmith Dataset</td>
+          </tr>
+          <tr>
+            <td>执行侧</td>
+            <td><code>run_evaluation</code> + <code>test_function</code></td>
+            <td>逐条跑 Agent，把输出交给评估器</td>
+          </tr>
+          <tr>
+            <td>评分侧</td>
+            <td>两个 <code>RunEvaluator</code> 子类</td>
+            <td>分别打 processing_mode 与 response_completeness 分</td>
+          </tr>
+          <tr>
+            <td>辅助侧</td>
+            <td><code>_get_example_*</code></td>
+            <td>兼容 Example 对象与 dict，避免属性访问崩掉</td>
+          </tr>
+          <tr>
+            <td>可选工具</td>
+            <td><code>run_single_test</code> / <code>compare_experiments</code></td>
+            <td>调试单条；对比多个 Experiment 平均分</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 3. 主流程时序 ==================== -->
+    <section id="main-flow">
+      <h2>3. 主流程时序</h2>
+      <p class="muted">对应文件底部 <code>if __name__ == "__main__"</code> 的两步编排。</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  participant User as 用户/脚本入口
+  participant Main as __main__
+  participant Create as create_test_dataset
+  participant LS as LangSmith Client
+  participant Eval as run_evaluation
+  participant TF as test_function
+  participant Agent as run_wealth_advisor
+  participant Judge as RunEvaluators
+
+  User->>Main: python 运行脚本
+  Main->>Main: 检查 API Key / TRACING
+  alt 未启用
+    Main-->>User: 打印环境变量要求并退出
+  end
+
+  Main->>Create: 准备 wealth-advisor-test-dataset
+  Create->>LS: read_dataset / create_dataset
+  Create->>LS: create_example 循环写入用例
+  Create-->>Main: dataset_name
+
+  Main->>LS: list_examples 校验非空
+  Main->>Eval: run_evaluation(dataset, experiment)
+  loop 每个 Example
+    Eval->>TF: 传入 example
+    TF->>Agent: user_query + customer_id
+    Agent-->>TF: final_response / processing_mode
+    TF-->>Eval: 输出字典
+    Eval->>Judge: evaluate_run(run, example)
+    Judge-->>Eval: score + comment
+  end
+  Eval-->>Main: results
+  Main-->>User: 提示去 smith.langchain.com 看 Experiments
+        </pre>
+        <p class="caption">图 3 · 主流程时序：数据集准备 → 批量评估 → 云端查看</p>
+      </div>
+
+      <div class="callout">
+        <code>evaluate()</code> 内部串行（<code>max_concurrency=1</code>）执行，避免 API 限流；
+        每次运行会生成带时间戳的 <code>experiment_prefix</code>，便于在 LangSmith 中区分实验。
+      </div>
+    </section>
+
+    <!-- ==================== 4. 测试用例 ==================== -->
+    <section id="data">
+      <h2>4. 测试用例数据</h2>
+      <p>三类常量最终合并为 <code>ALL_TEST_CASES</code>，供 <code>create_test_dataset</code> 写入云端。</p>
+
+      <div class="layer-grid">
+        <div class="layer-card">
+          <div class="num">3 条</div>
+          <h4>REACTIVE</h4>
+          <p>简单查询：行情、组合占比、ETF 解释。期望 <code>processing_mode=reactive</code>。</p>
+        </div>
+        <div class="layer-card delib">
+          <div class="num">3 条</div>
+          <h4>DELIBERATIVE</h4>
+          <p>复杂规划：衰退调仓、退休策略、教育金计划。期望 <code>deliberative</code>。</p>
+        </div>
+        <div class="layer-card edge">
+          <div class="num">2 条</div>
+          <h4>EDGE</h4>
+          <p>空查询、超长查询。用 <code>should_handle_error</code> / <code>should_handle</code> 标记。</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  subgraph CASE["单条用例结构"]
+    IN["inputs<br/>user_query<br/>customer_id"]
+    OUT["outputs<br/>processing_mode<br/>should_contain ..."]
+  end
+  IN -->|"create_example"| DS["LangSmith Dataset"]
+  OUT -->|"create_example"| DS
+  DS -->|"evaluate 时作为 Example"| RUN["Run 输出 vs expected"]
+        </pre>
+        <p class="caption">图 4 · 用例字段如何进入 Dataset，再参与评分</p>
+      </div>
+    </section>
+
+    <!-- ==================== 5. 辅助函数 ==================== -->
+    <section id="helpers">
+      <h2>5. 辅助读取函数</h2>
+
+      <div class="method-card">
+        <h4>_get_example_inputs</h4>
+        <div class="sig">_get_example_inputs(example) → dict</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>从 Example 对象或普通 dict 安全取出 inputs；失败返回空字典。</div>
+          <div class="k">读取顺序</div>
+          <div><code>example.inputs</code> → <code>dict["inputs"]</code> → 自身含 <code>user_query</code> → <code>__dict__</code></div>
+          <div class="k">被谁用</div>
+          <div><code>run_evaluation</code> 内嵌的 <code>test_function</code></div>
+        </div>
+      </div>
+
+      <div class="method-card">
+        <h4>_get_example_outputs</h4>
+        <div class="sig">_get_example_outputs(example) → dict</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>安全取出期望输出（outputs），供评估器读取期望模式与关键词。</div>
+          <div class="k">被谁用</div>
+          <div><code>ProcessingModeEvaluator</code>、<code>ResponseCompletenessEvaluator</code></div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        这两个函数不是业务逻辑，而是适配层：LangSmith SDK 在不同调用路径里可能传对象也可能传字典，
+        统一成 <code>dict</code> 后，上层评估与推理代码不必再分支。
+      </div>
+    </section>
+
+    <!-- ==================== 6. 评估器 ==================== -->
+    <section id="evaluators">
+      <h2>6. 评估器</h2>
+      <p>两者都继承 <code>langsmith.RunEvaluator</code>，实现 <code>evaluate_run(run, example)</code>，返回带
+        <code>key</code> / <code>score</code> / <code>comment</code> 的反馈字典。</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  RUN["Run.outputs<br/>processing_mode<br/>final_response"]
+  EX["Example.outputs<br/>期望字段"]
+
+  RUN --> PM["ProcessingModeEvaluator"]
+  EX --> PM
+  RUN --> RC["ResponseCompletenessEvaluator"]
+  EX --> RC
+
+  PM -->|"相等 → 1.0<br/>不等 → 0.0"| S1["key: processing_mode"]
+  RC -->|"命中关键词比例"| S2["key: response_completeness"]
+        </pre>
+        <p class="caption">图 5 · 两个评估器如何读 Run 与 Example 并打分</p>
+      </div>
+
+      <div class="method-card">
+        <h4>ProcessingModeEvaluator.evaluate_run</h4>
+        <div class="sig">evaluate_run(run, example, **kwargs) → Dict</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>比对实际 <code>processing_mode</code> 与期望是否一致（reactive / deliberative）。</div>
+          <div class="k">得分</div>
+          <div>匹配 1.0；不匹配 0.0；未指定期望则 <code>score=None</code>（跳过有效计分）。</div>
+        </div>
+      </div>
+
+      <div class="method-card">
+        <h4>ResponseCompletenessEvaluator.evaluate_run</h4>
+        <div class="sig">evaluate_run(run, example, **kwargs) → Dict</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>检查 <code>final_response</code> 是否包含 <code>should_contain</code> 中的关键词（大小写不敏感）。</div>
+          <div class="k">得分</div>
+          <div><code>命中数 / 期望数</code>，区间 [0, 1]；无响应则为 0。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 7. 核心 API ==================== -->
+    <section id="apis">
+      <h2>7. 核心 API 方法</h2>
+
+      <h3>7.1 create_test_dataset</h3>
+      <div class="method-card">
+        <h4>create_test_dataset</h4>
+        <div class="sig">create_test_dataset(dataset_name="wealth-advisor-test-dataset") → str | None</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>确保云端存在数据集；若已有示例则直接复用；若空或不存在则写入 ALL_TEST_CASES。</div>
+          <div class="k">关键 API</div>
+          <div><code>read_dataset</code> / <code>create_dataset</code> / <code>create_example</code> / <code>list_examples</code></div>
+          <div class="k">返回</div>
+          <div>成功返回数据集名；Client 未初始化或异常时返回 None。</div>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  START(["create_test_dataset"]) --> CHK{client 存在?}
+  CHK -->|否| FAIL1["打印错误 / 返回 None"]
+  CHK -->|是| READ{"read_dataset 成功?"}
+  READ -->|是且有示例| REUSE["直接返回 dataset_name"]
+  READ -->|是但为空| ADD["写入 ALL_TEST_CASES"]
+  READ -->|不存在| NEW["create_dataset"]
+  NEW --> ADD
+  ADD --> VERIFY["list_examples 验证数量"]
+  VERIFY --> OK(["返回 dataset_name"])
+        </pre>
+        <p class="caption">图 6 · create_test_dataset 分支逻辑</p>
+      </div>
+
+      <h3>7.2 run_evaluation</h3>
+      <div class="method-card">
+        <h4>run_evaluation</h4>
+        <div class="sig">run_evaluation(dataset_name, experiment_name=None, evaluators=None) → Dict | None</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>对指定数据集跑一轮 LangSmith Experiment：推理 + 评分。</div>
+          <div class="k">默认评估器</div>
+          <div>未传入时使用 ProcessingMode + ResponseCompleteness。</div>
+          <div class="k">核心</div>
+          <div>内嵌 <code>test_function</code>，再调用 <code>langsmith.evaluation.evaluate</code>。</div>
+        </div>
+      </div>
+
+      <div class="method-card">
+        <h4>test_function（内嵌于 run_evaluation）</h4>
+        <div class="sig">test_function(example: Example) → Dict[str, Any]</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>把 Dataset 中的一条 example 转成 Agent 调用，并规范输出字段。</div>
+          <div class="k">输出字段</div>
+          <div><code>final_response</code>、<code>processing_mode</code>、<code>query_type</code>、<code>error</code></div>
+          <div class="k">空查询</div>
+          <div>不调用 Agent，直接返回错误占位结果（对应边界用例）。</div>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  IN(["example"]) --> PARSE["解析 inputs"]
+  PARSE --> EMPTY{"user_query 为空?"}
+  EMPTY -->|是| ERR["返回 error / unknown 模式"]
+  EMPTY -->|否| CALL["run_wealth_advisor"]
+  CALL --> NORM["规范化输出字典"]
+  NORM --> OUT(["供 evaluate + 评估器使用"])
+  ERR --> OUT
+        </pre>
+        <p class="caption">图 7 · test_function 内部流程</p>
+      </div>
+
+      <h3>7.3 run_single_test</h3>
+      <div class="method-card">
+        <h4>run_single_test</h4>
+        <div class="sig">run_single_test(user_query, customer_id="customer1") → Dict</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>不走 Dataset / evaluate，直接调一次 Agent，打印模式、耗时与响应预览。</div>
+          <div class="k">关系</div>
+          <div>与批量评估共享 <code>run_wealth_advisor</code>；适合本地调试，不计入 Experiment。</div>
+          <div class="k">返回</div>
+          <div><code>result</code>、<code>process_time</code>、<code>timestamp</code></div>
+        </div>
+      </div>
+
+      <h3>7.4 compare_experiments</h3>
+      <div class="method-card">
+        <h4>compare_experiments</h4>
+        <div class="sig">compare_experiments(experiment_names: List[str]) → Dict | None</div>
+        <div class="method-meta">
+          <div class="k">作用</div>
+          <div>拉取多个实验的 runs，按 feedback key 汇总平均分，用于版本对比。</div>
+          <div class="k">数据源</div>
+          <div><code>client.list_runs(project_name=exp_name)</code> + <code>run.feedback_stats</code></div>
+          <div class="k">返回</div>
+          <div>每个实验名 → <code>total_runs</code> + <code>average_scores</code></div>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  E1["experiment A"] --> LIST["list_runs"]
+  E2["experiment B"] --> LIST
+  LIST --> AGG["按 feedback key 收集 score"]
+  AGG --> AVG["计算平均值"]
+  AVG --> OUT["comparison_results"]
+        </pre>
+        <p class="caption">图 8 · compare_experiments 汇总逻辑</p>
+      </div>
+    </section>
+
+    <!-- ==================== 8. 调用依赖全景 ==================== -->
+    <section id="callgraph">
+      <h2>8. 调用依赖全景</h2>
+      <p>把「数据 → 执行 → 评分 → 对比」串成一张总览，便于对照源码阅读顺序。</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  subgraph LOCAL["本地定义"]
+    CASES["三类 TEST_CASES → ALL"]
+    H1["_get_example_inputs"]
+    H2["_get_example_outputs"]
+    PM["ProcessingModeEvaluator"]
+    RC["ResponseCompletenessEvaluator"]
+  end
+
+  subgraph ORCH["编排 API"]
+    C["create_test_dataset"]
+    R["run_evaluation"]
+    T["test_function"]
+    S["run_single_test"]
+    X["compare_experiments"]
+  end
+
+  subgraph EXT["外部系统"]
+    LS["LangSmith 云端<br/>Dataset / Experiment / Feedback"]
+    AG["投顾 Agent<br/>run_wealth_advisor"]
+  end
+
+  CASES --> C
+  C --> LS
+  R --> T
+  R --> PM
+  R --> RC
+  R --> LS
+  T --> H1
+  T --> AG
+  PM --> H2
+  RC --> H2
+  S --> AG
+  X --> LS
+
+  MAIN["__main__"] --> C
+  MAIN --> R
+        </pre>
+        <p class="caption">图 9 · 全景：本地定义、编排 API、LangSmith 与 Agent</p>
+      </div>
+
+      <div class="callout">
+        阅读建议：先看常量用例 → 两个评估器 → <code>create_test_dataset</code> →
+        <code>run_evaluation</code>（含 <code>test_function</code>）→ 最后看 <code>__main__</code> 如何串起来。
+        <code>run_single_test</code> 与 <code>compare_experiments</code> 是旁路工具，主流程默认不会调用。
+      </div>
+    </section>
+
+    <footer>
+      源码文件：<code>3-助手+测试用例集执行+LangSmith.py</code> ·
+      讲解文档与源码同目录 · 图为 Mermaid 渲染，可点击「查看源代码」复制。
+    </footer>
+  </div>
+</body>
+
+</html>

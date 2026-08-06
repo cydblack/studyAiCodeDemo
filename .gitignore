@@ -1,0 +1,36 @@
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+serviceAccount*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / 本地工具
+.idea/
+.vscode/
+.deepeval/
+
+# 系统文件
+.DS_Store
+Thumbs.db

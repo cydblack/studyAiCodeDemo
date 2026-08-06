@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>深思熟虑式智能体 · 代码讲解</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+    const LIGHT_TEXT = "#ffffff";
+    const DARK_TEXT = "#1a2a28";
+
+    function parseCssColor(value) {
+      if (!value || value === "none" || value === "transparent") return null;
+      const v = value.trim();
+      if (v.startsWith("#")) {
+        let hex = v.slice(1);
+        if (hex.length === 3) {
+          hex = hex.split("").map((c) => c + c).join("");
+        }
+        if (hex.length === 8) hex = hex.slice(0, 6);
+        if (hex.length !== 6) return null;
+        return {
+          r: parseInt(hex.slice(0, 2), 16),
+          g: parseInt(hex.slice(2, 4), 16),
+          b: parseInt(hex.slice(4, 6), 16),
+        };
+      }
+      const m = v.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+      if (m) {
+        return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+      }
+      return null;
+    }
+
+    function relativeLuminance({ r, g, b }) {
+      const toLinear = (c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    }
+
+    function textColorForBg(bg) {
+      // 浅色背景用深字，深色背景用浅字
+      return relativeLuminance(bg) > 0.45 ? DARK_TEXT : LIGHT_TEXT;
+    }
+
+    function getFillFromNode(gNode) {
+      if (!gNode) return null;
+      const shape = gNode.querySelector(
+        ":scope > rect, :scope > polygon, :scope > circle, :scope > ellipse, :scope > path"
+      );
+      if (!shape) return null;
+      const fill =
+        shape.getAttribute("fill") ||
+        getComputedStyle(shape).fill ||
+        shape.style.fill;
+      return parseCssColor(fill);
+    }
+
+    function findBackgroundColor(el, diagramRoot) {
+      // 1) 所属 flowchart / state 节点
+      const nodeG = el.closest("g.node, g.actor, g.note, g.label, g.cluster");
+      if (nodeG) {
+        const fromNode = getFillFromNode(nodeG);
+        if (fromNode) return fromNode;
+
+        // cluster 标题常在 cluster 内，取 cluster rect
+        if (nodeG.classList.contains("cluster")) {
+          const rect = nodeG.querySelector("rect");
+          const c = parseCssColor(
+            rect?.getAttribute("fill") || getComputedStyle(rect || nodeG).fill
+          );
+          if (c) return c;
+        }
+      }
+
+      // 2) edgeLabel 背景 rect
+      const edgeLabel = el.closest("g.edgeLabel");
+      if (edgeLabel) {
+        const rect = edgeLabel.querySelector("rect");
+        const c = parseCssColor(
+          rect?.getAttribute("fill") ||
+            getComputedStyle(rect || edgeLabel).backgroundColor
+        );
+        if (c) return c;
+      }
+
+      // 3) 外层图容器背景
+      const diagramBox = diagramRoot.closest(".diagram");
+      if (diagramBox) {
+        const bg = parseCssColor(getComputedStyle(diagramBox).backgroundColor);
+        if (bg) return bg;
+      }
+
+      return { r: 21, g: 40, b: 40 }; // 默认按深色图底处理
+    }
+
+    function applyTextColor(el, color) {
+      if (el instanceof SVGElement) {
+        el.setAttribute("fill", color);
+        el.style.fill = color;
+      }
+      el.style.color = color;
+    }
+
+    function adaptMermaidTextContrast() {
+      document.querySelectorAll(".diagram .mermaid").forEach((root) => {
+        const targets = root.querySelectorAll(
+          "text, tspan, .nodeLabel, .edgeLabel, .label, .cluster-label, .messageText, .noteText, .actor, foreignObject div, foreignObject span, foreignObject p"
+        );
+        targets.forEach((el) => {
+          // 跳过不可见装饰
+          if (el.closest(".caption")) return;
+          const bg = findBackgroundColor(el, root);
+          const color = textColorForBg(bg);
+          applyTextColor(el, color);
+          // foreignObject 内子元素一并设置
+          if (el.tagName === "foreignObject" || el.namespaceURI?.includes("xhtml")) {
+            el.querySelectorAll("*").forEach((child) => applyTextColor(child, color));
+          }
+        });
+      });
+    }
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        // 全部区块使用深色底 + 浅色字，避免浅色方块配白字
+        primaryColor: "#1a3a3a",
+        primaryTextColor: "#ffffff",
+        primaryBorderColor: "#3d6a6a",
+        mainBkg: "#1a3a3a",
+        nodeBorder: "#3d6a6a",
+        secondaryColor: "#244848",
+        secondaryTextColor: "#ffffff",
+        tertiaryColor: "#2a5050",
+        tertiaryTextColor: "#ffffff",
+        clusterBkg: "#163030",
+        clusterBorder: "#3d6a6a",
+        titleColor: "#ffffff",
+        lineColor: "#8fb5a4",
+        textColor: "#ffffff",
+        edgeLabelBackground: "#1a3a3a",
+        actorBkg: "#1a3a3a",
+        actorBorder: "#3d6a6a",
+        actorTextColor: "#ffffff",
+        actorLineColor: "#8fb5a4",
+        signalColor: "#8fb5a4",
+        signalTextColor: "#ffffff",
+        labelBoxBkgColor: "#244848",
+        labelBoxBorderColor: "#3d6a6a",
+        labelTextColor: "#ffffff",
+        loopTextColor: "#ffffff",
+        noteBkgColor: "#244848",
+        noteTextColor: "#ffffff",
+        noteBorderColor: "#3d6a6a",
+        activationBkgColor: "#2a5050",
+        activationBorderColor: "#3d6a6a",
+        sequenceNumberColor: "#ffffff",
+        background: "#152828",
+        fontFamily: "IBM Plex Sans, sans-serif"
+      },
+      flowchart: { curve: "basis", padding: 16 }
+    });
+
+    function enhanceDiagramSourceView() {
+      // 渲染前保存 Mermaid 源码，并给每张图加「查看源代码」按钮
+      document.querySelectorAll(".diagram").forEach((box) => {
+        const mermaidEl = box.querySelector(".mermaid");
+        if (!mermaidEl || box.querySelector(".diagram-toolbar")) return;
+
+        const source = (mermaidEl.textContent || "").trim();
+        if (!source) return;
+
+        const toolbar = document.createElement("div");
+        toolbar.className = "diagram-toolbar";
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "diagram-src-btn";
+        toggleBtn.textContent = "查看源代码";
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "diagram-copy-btn";
+        copyBtn.textContent = "复制";
+        copyBtn.hidden = true;
+
+        toolbar.appendChild(toggleBtn);
+        toolbar.appendChild(copyBtn);
+
+        const sourcePanel = document.createElement("pre");
+        sourcePanel.className = "diagram-source";
+        sourcePanel.hidden = true;
+        sourcePanel.textContent = source;
+
+        box.insertBefore(toolbar, box.firstChild);
+        const caption = box.querySelector(".caption");
+        if (caption) box.insertBefore(sourcePanel, caption);
+        else box.appendChild(sourcePanel);
+
+        toggleBtn.addEventListener("click", () => {
+          const willShow = sourcePanel.hidden;
+          sourcePanel.hidden = !willShow;
+          copyBtn.hidden = !willShow;
+          toggleBtn.textContent = willShow ? "收起源代码" : "查看源代码";
+          toggleBtn.setAttribute("aria-expanded", willShow ? "true" : "false");
+        });
+
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(source);
+            copyBtn.textContent = "已复制";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          } catch {
+            copyBtn.textContent = "复制失败";
+            setTimeout(() => {
+              copyBtn.textContent = "复制";
+            }, 1200);
+          }
+        });
+      });
+    }
+
+    enhanceDiagramSourceView();
+    await mermaid.run({ querySelector: ".mermaid" });
+    adaptMermaidTextContrast();
+    requestAnimationFrame(adaptMermaidTextContrast);
+    setTimeout(adaptMermaidTextContrast, 200);
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --bg-deep: #e8e2d4;
+      --ink: #1a2a28;
+      --ink-muted: #4a5c58;
+      --accent: #1f6f5a;
+      --accent-soft: #d5ebe2;
+      --line: #c8c0ae;
+      --card: #faf7f0;
+      --code-bg: #1e2b29;
+      --code-fg: #d8e6df;
+      --warn: #8a4b1f;
+      --diagram-bg: #152828;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, #d5ebe2 0%, transparent 55%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, #e8dcc8 0%, transparent 50%),
+        var(--bg);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    header.hero {
+      margin-bottom: 3rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    header.hero .brand {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      margin-bottom: 0.75rem;
+    }
+
+    header.hero .lede {
+      color: var(--ink-muted);
+      font-size: 1.05rem;
+      max-width: 40em;
+    }
+
+    header.hero .meta {
+      margin-top: 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    header.hero .meta span {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+    }
+
+    nav.toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    nav.toc h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-muted);
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+    }
+
+    nav.toc ol {
+      padding-left: 1.25rem;
+      columns: 2;
+      gap: 2rem;
+    }
+
+    nav.toc a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+
+    nav.toc a:hover { text-decoration: underline; }
+
+    section { margin-bottom: 3.5rem; }
+
+    section > h2 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 1.55rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+
+    section > h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.75rem;
+      color: var(--ink);
+    }
+
+    p { margin-bottom: 1rem; color: var(--ink); }
+    p.muted { color: var(--ink-muted); }
+
+    ul, ol { margin: 0 0 1rem 1.35rem; }
+    li { margin-bottom: 0.35rem; }
+
+    .diagram {
+      background: var(--diagram-bg);
+      border: 1px solid #2a4545;
+      padding: 1.5rem 1rem;
+      margin: 1.25rem 0 1.75rem;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .diagram-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .diagram-src-btn,
+    .diagram-copy-btn {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      padding: 0.28rem 0.65rem;
+      border: 1px solid #3d6a6a;
+      background: #1a3a3a;
+      color: #e8f4ee;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    .diagram-src-btn:hover,
+    .diagram-copy-btn:hover {
+      background: #244848;
+    }
+
+    .diagram-source {
+      display: block;
+      margin: 0 0 0.85rem;
+      padding: 0.9rem 1rem;
+      background: #0f1c1c;
+      border: 1px solid #2a4545;
+      border-left: 3px solid #5a9a8a;
+      color: #d8e6df;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 22rem;
+      overflow: auto;
+    }
+
+    .diagram-source[hidden] {
+      display: none !important;
+    }
+
+    .diagram .caption {
+      font-size: 0.8rem;
+      color: #a8c4b8;
+      text-align: center;
+      margin-top: 0.75rem;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    /* 统一深色块 + 浅色字，禁止浅色方块 */
+    .diagram .mermaid g.note > rect,
+    .diagram .mermaid g.label > rect,
+    .diagram .mermaid .edgeLabel > rect,
+    .diagram .mermaid g.cluster > rect {
+      fill: #244848 !important;
+      stroke: #3d6a6a !important;
+    }
+
+    .diagram .mermaid g.note text,
+    .diagram .mermaid g.note tspan,
+    .diagram .mermaid g.note foreignObject *,
+    .diagram .mermaid .noteText,
+    .diagram .mermaid g.label text,
+    .diagram .mermaid g.label tspan,
+    .diagram .mermaid g.label foreignObject *,
+    .diagram .mermaid text,
+    .diagram .mermaid tspan,
+    .diagram .mermaid .nodeLabel,
+    .diagram .mermaid .edgeLabel,
+    .diagram .mermaid .cluster-label,
+    .diagram .mermaid .actor {
+      fill: #ffffff !important;
+      color: #ffffff !important;
+    }
+
+    /* 图注保持浅灰可读 */
+    .diagram .caption {
+      color: #a8c4b8 !important;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.92rem;
+      background: var(--card);
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--bg-deep);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+
+    code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.88em;
+      background: var(--accent-soft);
+      padding: 0.1em 0.35em;
+      border-radius: 2px;
+      color: var(--accent);
+    }
+
+    .code-block {
+      margin: 1rem 0 1.5rem;
+    }
+
+    .code-block .code-label {
+      display: inline-block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: #a8c4b8;
+      background: #152828;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid #2a4545;
+      border-bottom: none;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 1.1rem 1.25rem;
+      overflow-x: auto;
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.82rem;
+      line-height: 1.55;
+      border-left: 3px solid var(--accent);
+    }
+
+    .code-block pre {
+      border-top: 1px solid #2a4545;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+    }
+
+    .phase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin: 1.25rem 0 1.75rem;
+    }
+
+    .phase-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--accent);
+      padding: 1rem;
+    }
+
+    .phase-card .num {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .phase-card h4 {
+      font-size: 1rem;
+      margin: 0.35rem 0 0.4rem;
+      font-family: "IBM Plex Serif", Georgia, serif;
+    }
+
+    .phase-card p {
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+      margin: 0;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      padding: 1rem 1.15rem;
+      margin: 1.25rem 0;
+      font-size: 0.95rem;
+    }
+
+    .callout.warn {
+      background: #f3e6d6;
+      border-left-color: var(--warn);
+    }
+
+    .state-layers {
+      display: grid;
+      gap: 0.5rem;
+      margin: 1.25rem 0;
+    }
+
+    .state-layer {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 0.75rem;
+      align-items: start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 0.85rem 1rem;
+    }
+
+    .state-layer .label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--accent);
+      padding-top: 0.15rem;
+    }
+
+    .state-layer .fields {
+      font-size: 0.9rem;
+      color: var(--ink-muted);
+    }
+
+    .state-layer .fields code { margin-right: 0.35rem; }
+
+    footer {
+      margin-top: 4rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+    }
+
+    @media (max-width: 640px) {
+      nav.toc ol { columns: 1; }
+      .state-layer { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1 class="brand">深思熟虑式智能体</h1>
+      <p class="lede">
+        对 <code>深思熟虑式.py</code> 的代码逻辑梳理：基于 LangGraph 的五阶段流水线，
+        从选题输入逐步沉淀为结构化分析结论，最终产出投资研究报告。
+      </p>
+      <div class="meta">
+        <span>Deliberative Agent</span>
+        <span>LangGraph StateGraph</span>
+        <span>Tongyi / qwen-flash</span>
+        <span>Prompt → YAML</span>
+      </div>
+    </header>
+
+    <nav class="toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">是什么：深思熟虑型架构</a></li>
+        <li><a href="#pipeline">主流程：五阶段流水线</a></li>
+        <li><a href="#state">状态机：定义、使用与流转</a></li>
+        <li><a href="#dataflow">数据流：阶段间如何传值</a></li>
+        <li><a href="#node">节点实现：统一的 LLM Chain 模式</a></li>
+        <li><a href="#graph">图编译：StateGraph 装配</a></li>
+        <li><a href="#entry">入口与产物</a></li>
+        <li><a href="#structure">文件与模块结构</a></li>
+      </ol>
+    </nav>
+
+    <!-- 1 -->
+    <section id="overview">
+      <h2>1. 是什么：深思熟虑型架构</h2>
+      <p>
+        「深思熟虑式」智能体不追求单次即时回答，而是把研究任务拆成
+        <strong>感知 → 建模 → 推理 → 决策 → 报告</strong>
+        五个显式阶段。每个阶段用 LLM 产出结构化中间结果，写入共享状态，下一阶段再消费。
+      </p>
+      <p class="muted">
+        与反应式（Reactive）智能体对比：反应式偏「问一句答一句」；深思熟虑式偏「先想清楚再下结论」，
+        用多步推理换更高质量的投研输出。源码开头的模块说明也直接点明了这条主线：
+      </p>
+
+      <div class="code-block">
+        <div class="code-label">深思熟虑式.py · 模块 docstring</div>
+<pre><code>"""
+深思熟虑智能体（Deliberative Agent）- 智能投研助手
+
+核心流程：
+1. 感知：收集市场数据和信息
+2. 建模：构建内部世界模型，理解市场状态
+3. 推理：生成多个候选分析方案并模拟结果
+4. 决策：选择最优投资观点并形成报告
+5. 报告：生成完整研究报告
+"""</code></pre>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  subgraph Reactive["反应式"]
+    Q1[用户问题] --> A1[直接回答]
+  end
+  subgraph Deliberative["深思熟虑式"]
+    Q2[研究主题] --> P[感知]
+    P --> M[建模]
+    M --> R[推理]
+    R --> D[决策]
+    D --> Rep[报告]
+  end
+        </pre>
+        <p class="caption">图 1 · 反应式 vs 深思熟虑式</p>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="pipeline">
+      <h2>2. 主流程：五阶段流水线</h2>
+      <p>五个节点串行连接，入口为 <code>perception</code>，出口经 <code>report</code> 到达 <code>END</code>。</p>
+
+      <div class="phase-grid">
+        <div class="phase-card">
+          <div class="num">01</div>
+          <h4>感知 Perception</h4>
+          <p>收集市场概况、指标、新闻、行业趋势 → JSON</p>
+        </div>
+        <div class="phase-card">
+          <div class="num">02</div>
+          <h4>建模 Modeling</h4>
+          <p>基于感知数据构建内部世界模型 → JSON</p>
+        </div>
+        <div class="phase-card">
+          <div class="num">03</div>
+          <h4>推理 Reasoning</h4>
+          <p>生成 3 个差异化候选投资方案 → JSON 数组</p>
+        </div>
+        <div class="phase-card">
+          <div class="num">04</div>
+          <h4>决策 Decision</h4>
+          <p>评估候选方案，选出最优观点 → JSON</p>
+        </div>
+        <div class="phase-card">
+          <div class="num">05</div>
+          <h4>报告 Report</h4>
+          <p>综合前述结果，撰写完整投研报告 → 文本</p>
+        </div>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  START([开始]) --> PER[perception 感知]
+  PER --> MOD[modeling 建模]
+  MOD --> REA[reasoning 推理]
+  REA --> DEC[decision 决策]
+  DEC --> REP[report 报告]
+  REP --> FIN([END])
+
+  PER -.写入.-> S1[(perception_data)]
+  MOD -.写入.-> S2[(world_model)]
+  REA -.写入.-> S3[(reasoning_plans)]
+  DEC -.写入.-> S4[(selected_plan)]
+  REP -.写入.-> S5[(final_report)]
+        </pre>
+        <p class="caption">图 2 · LangGraph 主流程图（与 create_research_agent_workflow 一致）</p>
+      </div>
+
+      <p>图上的线性边，对应装配代码就是一连串 <code>add_edge</code>：</p>
+
+      <div class="code-block">
+        <div class="code-label">create_research_agent_workflow · 挂节点与连边</div>
+<pre><code>workflow = StateGraph(ResearchAgentState)
+
+workflow.add_node("perception", perception)
+workflow.add_node("modeling", modeling)
+workflow.add_node("reasoning", reasoning)
+workflow.add_node("decision", decision)
+workflow.add_node("report", report_generation)
+
+workflow.set_entry_point("perception")
+
+workflow.add_edge("perception", "modeling")
+workflow.add_edge("modeling", "reasoning")
+workflow.add_edge("reasoning", "decision")
+workflow.add_edge("decision", "report")
+workflow.add_edge("report", END)
+
+return workflow.compile()</code></pre>
+      </div>
+
+      <div class="callout">
+        代码里虽然定义了 <code>router()</code>，但当前图是用 <code>add_edge</code> 写死的线性边；
+        实际执行路径就是上图的单向流水线，并不走条件路由。
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="state">
+      <h2>3. 状态机：定义、使用与流转</h2>
+      <p>
+        在 LangGraph 里，<code>ResearchAgentState</code> 不是「枚举几个状态名」那么简单，
+        而是整张图共享的一份<strong>数据黑板</strong>：入口写入初始值，每个节点读这份黑板、写回更新，
+        图沿着固定边推进，状态字段被逐步填满。
+      </p>
+
+      <div class="code-block">
+        <div class="code-label">ResearchAgentState</div>
+<pre><code>class ResearchAgentState(TypedDict):
+    """研究智能体的状态"""
+
+    # 输入
+    research_topic: str
+    industry_focus: str
+    time_horizon: str
+
+    # 处理状态
+    perception_data: Optional[Dict[str, Any]]
+    world_model: Optional[Dict[str, Any]]
+    reasoning_plans: Optional[List[Dict[str, Any]]]
+    selected_plan: Optional[Dict[str, Any]]
+
+    # 输出
+    final_report: Optional[str]
+
+    # 控制流
+    current_phase: Literal[
+        "perception", "modeling", "reasoning", "decision", "report"
+    ]
+    error: Optional[str]</code></pre>
+      </div>
+
+      <div class="state-layers">
+        <div class="state-layer">
+          <div class="label">输入</div>
+          <div class="fields">
+            <code>research_topic</code>
+            <code>industry_focus</code>
+            <code>time_horizon</code>
+          </div>
+        </div>
+        <div class="state-layer">
+          <div class="label">中间结果</div>
+          <div class="fields">
+            <code>perception_data</code>
+            <code>world_model</code>
+            <code>reasoning_plans</code>
+            <code>selected_plan</code>
+          </div>
+        </div>
+        <div class="state-layer">
+          <div class="label">输出</div>
+          <div class="fields"><code>final_report</code></div>
+        </div>
+        <div class="state-layer">
+          <div class="label">控制</div>
+          <div class="fields">
+            <code>current_phase</code>
+            <code>error</code>
+          </div>
+        </div>
+      </div>
+
+      <h3>状态如何使用</h3>
+      <p>可以把 state 分成三类职责理解：</p>
+      <ul>
+        <li>
+          <strong>只读输入</strong>：<code>research_topic</code> / <code>industry_focus</code> /
+          <code>time_horizon</code> 在 <code>run_research_agent</code> 里写入后，各阶段 Prompt 都会读它们，一般不再改写。
+        </li>
+        <li>
+          <strong>阶段产物（读写）</strong>：节点从上游字段取数组装 Prompt，再把 LLM 结果写进本阶段字段。
+          例如建模读 <code>perception_data</code>，写出 <code>world_model</code>。
+        </li>
+        <li>
+          <strong>控制字段</strong>：<code>current_phase</code> 标记「逻辑上走到哪一步」；
+          <code>error</code> 记录异常信息。当前实现里，图的真实跳转靠 <code>add_edge</code>，
+          不靠 <code>current_phase</code> 做条件分支。
+        </li>
+      </ul>
+
+      <p>节点对状态的标准用法是「整包传入 → 覆盖写回」：</p>
+
+      <div class="code-block">
+        <div class="code-label">节点读写状态的统一写法</div>
+<pre><code># 读：从 state 取字段
+input_data = {
+    "research_topic": state["research_topic"],
+    "perception_data": json.dumps(state["perception_data"], ...),
+}
+
+# 写：浅拷贝后覆盖本阶段字段，并推进 current_phase
+return {
+    **state,
+    "world_model": result,
+    "current_phase": "reasoning",
+}</code></pre>
+      </div>
+
+      <div class="callout">
+        关键点：LangGraph 在每个节点执行后，用节点返回值更新图状态，再把最新 state 交给下一个节点。
+        所以后面的阶段天然能看到前面已经写入的字段，而不需要全局变量。
+      </div>
+
+      <h3>状态如何流转</h3>
+      <p>
+        有两层「流转」要分开看：一层是<strong>图节点流转</strong>（谁执行下一个函数），
+        一层是<strong>状态字段流转</strong>（哪几个字段从 None 变成有值）。
+      </p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+stateDiagram-v2
+  [*] --> perception: initial_state\n三要素已填\n其余为 None
+
+  perception --> modeling: 写入 perception_data\ncurrent_phase=modeling
+  modeling --> reasoning: 写入 world_model\ncurrent_phase=reasoning
+  reasoning --> decision: 写入 reasoning_plans\ncurrent_phase=decision
+  decision --> report: 写入 selected_plan\ncurrent_phase=report
+  report --> [*]: 写入 final_report\ncurrent_phase=completed
+        </pre>
+        <p class="caption">图 3a · current_phase 与字段填充的同步推进</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>时刻</th>
+            <th>图上位置</th>
+            <th>state 发生了什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>启动</td>
+            <td>尚未进入节点</td>
+            <td>构造 <code>initial_state</code>：三要素有值；中间结果 / 报告为 <code>None</code>；<code>current_phase="perception"</code>；<code>error=None</code></td>
+          </tr>
+          <tr>
+            <td>感知结束</td>
+            <td>perception → modeling</td>
+            <td>写入 <code>perception_data</code>；<code>current_phase</code> 改为 <code>modeling</code></td>
+          </tr>
+          <tr>
+            <td>建模结束</td>
+            <td>modeling → reasoning</td>
+            <td>写入 <code>world_model</code>；phase → <code>reasoning</code></td>
+          </tr>
+          <tr>
+            <td>推理结束</td>
+            <td>reasoning → decision</td>
+            <td>写入 <code>reasoning_plans</code>；phase → <code>decision</code></td>
+          </tr>
+          <tr>
+            <td>决策结束</td>
+            <td>decision → report</td>
+            <td>写入 <code>selected_plan</code>；phase → <code>report</code></td>
+          </tr>
+          <tr>
+            <td>报告结束</td>
+            <td>report → END</td>
+            <td>写入 <code>final_report</code>；phase 记为 <code>completed</code>；invoke 返回完整 state</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  subgraph S0["初始 state"]
+    A0["三要素: 有值"]
+    B0["中间字段: 全 None"]
+    C0["phase: perception"]
+  end
+  subgraph S1["感知后"]
+    A1["三要素: 保留"]
+    B1["perception_data: JSON"]
+    C1["phase: modeling"]
+  end
+  subgraph S2["建模后"]
+    A2["perception_data 仍在"]
+    B2["world_model: JSON"]
+    C2["phase: reasoning"]
+  end
+  subgraph S3["推理后"]
+    A3["上游字段累积保留"]
+    B3["reasoning_plans: 数组"]
+    C3["phase: decision"]
+  end
+  subgraph S4["决策后"]
+    A4["继续累积"]
+    B4["selected_plan: JSON"]
+    C4["phase: report"]
+  end
+  subgraph S5["报告后"]
+    A5["全部中间结果仍在"]
+    B5["final_report: 文本"]
+    C5["phase: completed"]
+  end
+  S0 --> S1 --> S2 --> S3 --> S4 --> S5
+        </pre>
+        <p class="caption">图 3b · 状态是「累积填充」而不是「每步清空」</p>
+      </div>
+
+      <p>
+        因此到报告阶段时，Prompt 可以同时拿到
+        <code>perception_data</code> + <code>world_model</code> + <code>selected_plan</code>：
+        它们都还在同一份 state 里。这也是深思熟虑式能「综合前文再写报告」的直接原因。
+      </p>
+
+      <div class="code-block">
+        <div class="code-label">初始状态：流转的起点</div>
+<pre><code>initial_state = {
+    "research_topic": topic,
+    "industry_focus": industry,
+    "time_horizon": horizon,
+    "perception_data": None,
+    "world_model": None,
+    "reasoning_plans": None,
+    "selected_plan": None,
+    "final_report": None,
+    "current_phase": "perception",
+    "error": None,
+}
+result = agent.invoke(initial_state)  # 结束后 result 即最终 state</code></pre>
+      </div>
+
+      <h3>异常时状态怎么变</h3>
+      <ul>
+        <li>LLM 调用失败：节点 catch 后写入 <code>error</code>，并把 <code>current_phase</code> 留在当前阶段。</li>
+        <li>上游字段缺失：如建模发现没有 <code>perception_data</code>，写 error，并把 phase「逻辑回退」到上一阶段名。</li>
+        <li>
+          但图边仍是固定的 <code>modeling → reasoning</code>；所以<strong>字段回退 ≠ 图上回跳</strong>。
+          真正要重试/回跳，需要改成条件边（例如挂上 <code>router</code>）。
+        </li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-label">异常写回示例（感知阶段）</div>
+<pre><code>except Exception as e:
+    return {
+        **state,
+        "error": f"感知阶段出错: {str(e)}",
+        "current_phase": "perception",
+    }</code></pre>
+      </div>
+
+      <h3>各阶段期望的结构化输出</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>阶段</th>
+            <th>状态字段</th>
+            <th>主要字段（Prompt / Pydantic 约定）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>感知</td>
+            <td><code>perception_data</code></td>
+            <td>market_overview, key_indicators, recent_news, industry_trends</td>
+          </tr>
+          <tr>
+            <td>建模</td>
+            <td><code>world_model</code></td>
+            <td>market_state, economic_cycle, risk_factors, opportunity_areas, market_sentiment</td>
+          </tr>
+          <tr>
+            <td>推理</td>
+            <td><code>reasoning_plans</code></td>
+            <td>plan_id, hypothesis, analysis_approach, expected_outcome, confidence_level, pros, cons</td>
+          </tr>
+          <tr>
+            <td>决策</td>
+            <td><code>selected_plan</code></td>
+            <td>selected_plan_id, investment_thesis, supporting_evidence, risk_assessment, recommendation, timeframe</td>
+          </tr>
+          <tr>
+            <td>报告</td>
+            <td><code>final_report</code></td>
+            <td>自然语言长文本（非 JSON）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="muted">
+        文件中还定义了 <code>PerceptionOutput</code> 等 Pydantic 模型，并 import 了
+        <code>PydanticOutputParser</code>，但当前节点实际使用的是 <code>JsonOutputParser</code> /
+        <code>StrOutputParser</code>，Pydantic 模型主要起「字段契约文档」作用。
+      </p>
+    </section>
+
+    <!-- 4 -->
+    <section id="dataflow">
+      <h2>4. 数据流：阶段间如何传值</h2>
+      <p>每个阶段的 Prompt 会注入「研究三要素」，并逐步叠加上游产物（JSON 字符串化后塞进模板）。</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  IN["topic / industry / horizon"] --> P
+  P["perception_data"] --> M
+  M["world_model"] --> R
+  R["reasoning_plans"] --> D
+  P --> Rep
+  M --> Rep
+  D["selected_plan"] --> Rep
+  Rep["final_report"]
+        </pre>
+        <p class="caption">图 3 · 中间结果依赖关系</p>
+      </div>
+
+      <p>以建模阶段为例：先校验上游 <code>perception_data</code>，再把它序列化进 Prompt：</p>
+
+      <div class="code-block">
+        <div class="code-label">modeling · 依赖校验与输入组装</div>
+<pre><code>if not state.get("perception_data"):
+    return {
+        **state,
+        "error": "建模阶段缺少感知数据",
+        "current_phase": "perception",
+    }
+
+input_data = {
+    "research_topic": state["research_topic"],
+    "industry_focus": state["industry_focus"],
+    "time_horizon": state["time_horizon"],
+    "perception_data": json.dumps(
+        state["perception_data"], ensure_ascii=False, indent=2
+    ),
+}</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>节点</th>
+            <th>Prompt 输入变量</th>
+            <th>前置校验</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>perception</code></td>
+            <td>research_topic, industry_focus, time_horizon</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td><code>modeling</code></td>
+            <td>三要素 + perception_data</td>
+            <td>缺少感知数据 → 记 error，phase 回退到 perception</td>
+          </tr>
+          <tr>
+            <td><code>reasoning</code></td>
+            <td>三要素 + world_model</td>
+            <td>缺少世界模型 → 回退 modeling</td>
+          </tr>
+          <tr>
+            <td><code>decision</code></td>
+            <td>三要素 + world_model + reasoning_plans</td>
+            <td>缺少候选方案 → 回退 reasoning</td>
+          </tr>
+          <tr>
+            <td><code>report</code></td>
+            <td>三要素 + perception_data + world_model + selected_plan</td>
+            <td>缺少选定方案 → 回退 decision</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        注意：节点内部在缺数据时会把 <code>current_phase</code> 改回上一阶段，但图上的边是固定
+        <code>A → B</code>，并没有根据 <code>current_phase</code> 做条件跳转。
+        因此这些「回退」主要体现在状态字段上；在线性边上，异常更多是靠 try/except 写 <code>error</code> 后继续往下走（或抛错由上层捕获）。
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section id="node">
+      <h2>5. 节点实现：统一的 LLM Chain 模式</h2>
+      <p>五个节点函数结构高度一致，可抽象为：</p>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  A[取 Prompt 模板] --> B[组装 input_data]
+  B --> C["prompt | llm | parser"]
+  C --> D[invoke]
+  D --> E[写回 state]
+        </pre>
+        <p class="caption">图 4 · 单节点内部步骤</p>
+      </div>
+
+      <p>感知阶段是最完整的「模板节点」示例：</p>
+
+      <div class="code-block">
+        <div class="code-label">perception · 完整节点逻辑</div>
+<pre><code>def perception(state: ResearchAgentState) -> ResearchAgentState:
+    print("1. 感知阶段：收集市场数据和信息...")
+
+    try:
+        prompt = ChatPromptTemplate.from_template(PERCEPTION_PROMPT)
+
+        input_data = {
+            "research_topic": state["research_topic"],
+            "industry_focus": state["industry_focus"],
+            "time_horizon": state["time_horizon"],
+        }
+
+        chain = prompt | llm | JsonOutputParser()
+        result = chain.invoke(input_data)
+
+        return {
+            **state,
+            "perception_data": result,
+            "current_phase": "modeling",
+        }
+    except Exception as e:
+        return {
+            **state,
+            "error": f"感知阶段出错: {str(e)}",
+            "current_phase": "perception",
+        }</code></pre>
+      </div>
+
+      <p>报告阶段唯一的差别是解析器换成字符串输出：</p>
+
+      <div class="code-block">
+        <div class="code-label">report_generation · 解析器差异</div>
+<pre><code>chain = prompt | llm | StrOutputParser()
+result = chain.invoke(input_data)
+
+return {
+    **state,
+    "final_report": result,
+    "current_phase": "completed",
+}</code></pre>
+      </div>
+
+      <ul>
+        <li>前四个阶段用 <code>JsonOutputParser</code>，要求模型输出 JSON。</li>
+        <li>报告阶段用 <code>StrOutputParser</code>，输出自然语言报告。</li>
+        <li>LLM 为 <code>Tongyi(model_name="qwen-flash")</code>，密钥来自环境变量 <code>DASHSCOPE_API_KEY</code>。</li>
+        <li>Prompt 文本不在 py 文件里硬编码，而是从 YAML 一次性加载。</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-label">启动时加载 Prompt</div>
+<pre><code>PROMPTS_FILE = Path(__file__).parent / "prompts" / "深思熟虑式_prompts.yaml"
+
+def load_prompts() -> Dict[str, str]:
+    with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+_PROMPTS = load_prompts()
+PERCEPTION_PROMPT = _PROMPTS["PERCEPTION"]
+MODELING_PROMPT = _PROMPTS["MODELING"]
+REASONING_PROMPT = _PROMPTS["REASONING"]
+DECISION_PROMPT = _PROMPTS["DECISION"]
+REPORT_PROMPT = _PROMPTS["REPORT"]</code></pre>
+      </div>
+
+      <h3>Prompt 变量映射</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>YAML 键</th>
+            <th>Python 常量</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>perception</td><td>PERCEPTION_PROMPT</td><td>市场感知</td></tr>
+          <tr><td>modeling</td><td>MODELING_PROMPT</td><td>世界建模</td></tr>
+          <tr><td>reasoning</td><td>REASONING_PROMPT</td><td>多方案推理</td></tr>
+          <tr><td>decision</td><td>DECISION_PROMPT</td><td>方案择优</td></tr>
+          <tr><td>report</td><td>REPORT_PROMPT</td><td>报告撰写</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 6 -->
+    <section id="graph">
+      <h2>6. 图编译：StateGraph 装配</h2>
+      <p>
+        <code>create_research_agent_workflow()</code> 完成「建图 → 挂节点 → 连边 → compile」。
+        同文件里还有一个未挂接的 <code>router</code>，展示「按 current_phase 决定下一步」的思路：
+      </p>
+
+      <div class="code-block">
+        <div class="code-label">router · 当前未挂到图上</div>
+<pre><code>def router(state: ResearchAgentState) -> str:
+    if state.get("error"):
+        return state["current_phase"]
+
+    current = state["current_phase"]
+    if current == "perception":
+        return "modeling"
+    elif current == "modeling":
+        return "reasoning"
+    elif current == "reasoning":
+        return "decision"
+    elif current == "decision":
+        return "report"
+    elif current == "report":
+        return END
+    else:
+        return END</code></pre>
+      </div>
+
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  participant U as 用户 main
+  participant R as run_research_agent
+  participant G as Compiled Graph
+  participant L as Tongyi LLM
+
+  U->>R: topic, industry, horizon
+  R->>G: invoke(initial_state)
+  G->>L: perception Prompt
+  L-->>G: perception_data JSON
+  G->>L: modeling Prompt
+  L-->>G: world_model JSON
+  G->>L: reasoning Prompt
+  L-->>G: reasoning_plans JSON
+  G->>L: decision Prompt
+  L-->>G: selected_plan JSON
+  G->>L: report Prompt
+  L-->>G: final_report 文本
+  G-->>R: 完整 state
+  R-->>U: 打印并保存报告
+        </pre>
+        <p class="caption">图 5 · 运行时序（一次完整 invoke）</p>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="entry">
+      <h2>7. 入口与产物</h2>
+      <h3>run_research_agent</h3>
+      <ul>
+        <li>编译工作流，构造 <code>initial_state</code>（中间字段均为 <code>None</code>，phase 为 perception）。</li>
+        <li>打印 Mermaid 图（调试用）。</li>
+        <li><code>agent.invoke(initial_state)</code> 同步跑完全程，返回最终 state。</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-label">run_research_agent</div>
+<pre><code>def run_research_agent(topic: str, industry: str, horizon: str) -> Dict[str, Any]:
+    agent = create_research_agent_workflow()
+
+    initial_state = {
+        "research_topic": topic,
+        "industry_focus": industry,
+        "time_horizon": horizon,
+        "perception_data": None,
+        "world_model": None,
+        "reasoning_plans": None,
+        "selected_plan": None,
+        "final_report": None,
+        "current_phase": "perception",
+        "error": None,
+    }
+
+    print(agent.get_graph().draw_mermaid())
+    result = agent.invoke(initial_state)
+    return result</code></pre>
+      </div>
+
+      <h3>__main__</h3>
+      <ul>
+        <li>交互输入：研究主题、行业焦点、时间范围。</li>
+        <li>成功则打印 <code>final_report</code>，并写入 <code>research_report_时间戳.txt</code>。</li>
+        <li>若 state 带 <code>error</code>，打印错误信息。</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-label">__main__ · 交互与落盘</div>
+<pre><code>topic = input("请输入研究主题 ...")
+industry = input("请输入行业焦点 ...")
+horizon = input("请输入时间范围 [短期/中期/长期]: ")
+
+result = run_research_agent(topic, industry, horizon)
+
+if result.get("error"):
+    print(f"发生错误: {result['error']}")
+else:
+    print(result.get("final_report", "未生成报告"))
+    filename = f"research_report_{timestamp}.txt"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(result.get("final_report", "未生成报告"))</code></pre>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section id="structure">
+      <h2>8. 文件与模块结构</h2>
+
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TB
+  subgraph Files["目录关系"]
+    PY["深思熟虑式.py"]
+    YML["prompts/深思熟虑式_prompts.yaml"]
+    HTML["深思熟虑式_讲解.html"]
+    OUT["research_report_*.txt"]
+  end
+  PY -->|load_prompts| YML
+  PY -->|运行产物| OUT
+  HTML -.->|文档说明| PY
+        </pre>
+        <p class="caption">图 6 · 相关文件关系</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>代码区块</th>
+            <th>职责</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>load_prompts / 常量</td>
+            <td>加载 YAML，绑定五个 Prompt 字符串</td>
+          </tr>
+          <tr>
+            <td>Pydantic Output 模型</td>
+            <td>描述各阶段 JSON 字段契约</td>
+          </tr>
+          <tr>
+            <td>ResearchAgentState</td>
+            <td>图状态定义</td>
+          </tr>
+          <tr>
+            <td>perception ~ report_generation</td>
+            <td>五个业务节点</td>
+          </tr>
+          <tr>
+            <td>router</td>
+            <td>阶段路由逻辑（当前图未挂接）</td>
+          </tr>
+          <tr>
+            <td>create_research_agent_workflow</td>
+            <td>装配并编译 StateGraph</td>
+          </tr>
+          <tr>
+            <td>run_research_agent / __main__</td>
+            <td>运行入口与报告落盘</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        一句话总结：这是一个「状态驱动、线性五步、每步一次 LLM」的投研流水线；
+        Prompt 外置 YAML，中间结果以 JSON 字段在 state 中累积，最后折叠成一份可读报告。
+      </div>
+    </section>
+
+    <footer>
+      文档对应源码：<code>05_LangGraph/深思熟虑式.py</code> · 图示由 Mermaid 渲染，需联网加载 CDN。
+    </footer>
+  </div>
+</body>
+</html>

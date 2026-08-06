@@ -1,0 +1,105 @@
+{
+  "generated_at": "2026-07-31T16:50:07",
+  "results": [
+    {
+      "case_name": "反应式-行情查询",
+      "user_query": "今天上证指数的表现如何？",
+      "customer_id": "cyd-case1",
+      "processing_mode": "reactive",
+      "query_type": "emergency",
+      "elapsed_seconds": 4.867643,
+      "steps": [
+        {
+          "step": 1,
+          "node": "assess",
+          "query_type": "emergency",
+          "processing_mode": "reactive",
+          "current_phase": "assess",
+          "final_response_preview": null,
+          "error": null
+        },
+        {
+          "step": 2,
+          "node": "reactive",
+          "query_type": "emergency",
+          "processing_mode": "reactive",
+          "current_phase": "assess",
+          "final_response_preview": "今日上证指数报3125.62点，上涨6.32点，涨幅0.20%，呈现小幅震荡上行态势，市场情绪偏稳。",
+          "error": null
+        },
+        {
+          "step": 3,
+          "node": "respond",
+          "query_type": "emergency",
+          "processing_mode": "reactive",
+          "current_phase": "assess",
+          "final_response_preview": "今日上证指数报3125.62点，上涨6.32点，涨幅0.20%，呈现小幅震荡上行态势，市场情绪偏稳。",
+          "error": null
+        }
+      ],
+      "final_response": "今日上证指数报3125.62点，上涨6.32点，涨幅0.20%，呈现小幅震荡上行态势，市场情绪偏稳。",
+      "error": null,
+      "langsmith_enabled": true,
+      "langsmith_project": "\"wealth-advisor-hybrid-agent\""
+    },
+    {
+      "case_name": "深思熟虑-组合优化",
+      "user_query": "根据当前市场情况，我应该如何调整投资组合以应对可能的经济衰退？",
+      "customer_id": "cyd-case2",
+      "processing_mode": "deliberative",
+      "query_type": "analytical",
+      "elapsed_seconds": 63.235459,
+      "steps": [
+        {
+          "step": 1,
+          "node": "assess",
+          "query_type": "analytical",
+          "processing_mode": "deliberative",
+          "current_phase": "assess",
+          "final_response_preview": null,
+          "error": null
+        },
+        {
+          "step": 2,
+          "node": "collect_data",
+          "query_type": "analytical",
+          "processing_mode": "deliberative",
+          "current_phase": "analyze",
+          "final_response_preview": null,
+          "error": null
+        },
+        {
+          "step": 3,
+          "node": "analyze",
+          "query_type": "analytical",
+          "processing_mode": "deliberative",
+          "current_phase": "analyze",
+          "final_response_preview": null,
+          "error": "分析阶段出错: Invalid json output: {\n  \"market_assessment\": {\n    \"recession_risk_level\": \"elevated\",\n    \"key_indicators_summary\": [\n      \"12个月美国衰退概率达38%（高于历史均值25%），叠加10Y-3M美债收益率曲线倒挂27bp，为近20年最深倒挂之一，属强衰退先行信号\",\n      \"制造业PMI为49.2（连续3个月低于荣枯线50），显示实体经济动能持续减弱；核心CPI虽回落至3.2%，但粘性仍存，美联储维持高利率立场明确\",\n      \"消费者信心指数102.5处于中性偏上区间，尚未出现恐慌性收缩，暗示衰退若发生或为‘浅衰退’（mild recession）而非深度萧条\",\n      \"股债相关性降至-0.15，显示传统对冲机制仍有效；VIX 3个月均值18.9，波动率温和上升但未达危机阈值（>30）\",\n      \"现金类资产（3M T-Bill收益率5.32%）提供罕见高确定性收益，持有现金的机会成本仅0.45%（vs. short-duration bonds），凸显防御配置价值\"\n    ],\n    \"sector_specific_risks\": [\n      \"科技板块面临三重压力：YTD纳斯达克下跌1.3%，ESG科技基金6个月回报-3.1%，AI资本开支虽高增（QoQ +12.4%），但监管风险评分6.8（满分10）处于高位，碳强度仅为市场均值72%，ESG可持续性存结构性挑战\",\n      \"全球ESG股票指数6个月回撤-2.9%，略优于大盘（-4.7%），印证ESG因子在压力期具备相对韧性；MSCI ESG评级BBB属中等水平，有提升空间\"\n    ]\n  },\n  \"portfolio_analysis\": {\n    \"current_allocation_alignment\": {\n      \"risk_tolerance_match\": \"moderately_aligned\",\n      \"horizon_compatibility\": \"medium_term_suitable\",\n      \"goal_alignment\": \"partially_aligned\",\n      \"esg_consistency\": \"aligned_but_suboptimal\"\n    },\n    \"strengths\": [\n      \"债券配置30%提供基础稳定性，且当前10Y美债6个月正回报2.1%，在衰退期有望进一步受益（历史平均+7.4%）\",\n      \"另类投资占比20%高于平衡型客户中位数（15%），具备分散化潜力；若含黄金、通胀挂钩资产等，可增强尾部风险保护\",\n      \"ESG偏好已嵌入持仓，组合ESG争议暴露率仅4.1%，显著低于行业均值（~12%），降低声誉与监管风险\"\n    ],\n    \"vulnerabilities\": [\n      \"股票仓位40%中科技行业集中度未披露，但结合偏好‘科技+ESG’，易受板块系统性回调拖累（历史衰退期科技跑输标普8.6个百分点）\",\n      \"现金仅10%（15万元），远低于当前高息环境下的最优防御水位（建议15–20%）；持有现金的机会成本极低（0.45%），实为低成本保险\",\n      \"债券久期风险未量化，但10Y国债久期达8.2年，在利率高位震荡期存在再投资不确定性；当前IG公司债回报（1.8%）显著低于国债（2.1%），信用利差收窄空间有限\",\n      \"ESG评级整体BBB，但科技子板块可持续评分仅58.3/100（中下水平），ESG质量存在‘漂绿’隐患，削弱其抗周期能力\"\n    ],\n    \"liquidity_and_efficiency_metrics\": {\n      \"cash_efficiency_ratio\": 0.1,\n      \"bond_duration_exposure_estimate\": \"high\",\n      \"esg_quality_gap_vs_benchmark\": \"1.2_standard_deviations_below_msci_esg_leader_index\"\n    }\n  },\n  \"recommendations\": [\n    {\n      \"action\": \"increase_cash_allocation\",\n      \"target\": 0.18,\n      \"rationale\": \"利用5.32%无风险收益率构建‘流动性缓冲’，覆盖未来24个月刚性支出（教育金/生活备用），降低被迫低位卖出权益资产风险；机会成本仅0.45%，属衰退期最高性价比防御工具\",\n      \"implementation\": \"将现有股票仓位减持3%（45,000元）+ 债券仓位减持2%（30,000元），转入高流动性货币基金（7日年化≥5.25%）\"\n    },\n    {\n      \"action\": \"rebalance_equity_allocation_with_esg_enhancement\",\n      \"target\": {\n        \"global_esg_equity_index\": 0.22,\n        \"us_tech_esg_focused_fund\": 0.08,\n        \"diversified_global_multisector_esg_fund\": 0.10\n      },\n      \"rationale\": \"维持科技敞口但提升ESG质量：用ESG评级AA+的全球多元ESG基金替代部分纯科技持仓，降低碳强度（目标<0.5x市场均值）和监管风险；历史显示ESG领导者基金在2008衰退期超额收益+3.2%\",\n      \"implementation\": \"减持非ESG科技个股/ETF共6%（90,000元），增持MSCI Global ESG Leaders ETF（评级AA+）及低碳科技主题ETF（碳强度≤0.45x）\"\n    },\n    {\n      \"action\": \"optimize_fixed_income_allocation\",\n      \"target\": {\n        \"short_duration_investment_grade_bonds\": 0.18,\n        \"tips_us_treasury_inflation_protected_securities\": 0.07,\n        \"us_treasury_bonds_10y\": 0.05\n      },\n      \"rationale\": \"缩短久期以规避利率波动风险（当前10Y久期8.2年），转向短债（久期<3年）获取4.95%收益并保持流动性；增配TIPS对冲滞胀风险（核心CPI 3.2%仍具粘性）\",\n      \"implementation\": \"减持长期国债5%（75,000元），增持短久期IG债券基金（久期2.3年）及TIPS ETF（权重7%）\"\n    },\n    {\n      \"action\": \"enhance_alternative_allocation_for_tail_risk_hedging\",\n      \"target\": {\n        \"gold_etf\": 0.08,\n        \"managed_futures_strategy_fund\": 0.07,\n        \"private_credit_fund_esg_screened\": 0.05\n      },\n      \"rationale\": \"黄金6个月+12.3%（隐含避险需求），且与股债负相关性强；管理期货在波动率上升期表现优异（VIX均值18.9）；ESG筛选私募信贷提供收益溢价（+150bps）且违约率低于同业1.2pct\",\n      \"implementation\": \"将原另类投资中非对冲型策略（如未对冲私募股权）置换为黄金ETF（GLD）、CTA策略基金及绿色私募信贷基金\"\n    }\n  ],\n  \"risk_analysis\": {\n    \"downside_protection_capacity\": \"enhanced\",\n    \"key_risk_exposures_post_adjustment\": [\n      \"equity_concentration_risk\": \"reduced_from_high_to_medium\",\n      \"interest_rate_risk\": \"reduced_by_38_percent_via_duration_shortening\",\n      \"esg_controversy_exposure\": \"projected_to_decline_to_0.023_(from_0.041)\",\n      \"liquidity_risk\": \"mitigated_with_cash_buffer_covering_22_months_of_projected_expenses\"\n    ],\n    \"stress_test_results\": {\n      \"scenario\": \"2008-style_recession_(30_percent_equity_drawdown)\",\n      \"portfolio_pre_adjustment_max_drawdown\": -24.6,\n      \"portfolio_post_adjustment_max_drawdown\": -16.8,\n      \"probability_of_loss_exceeding_20_percent\": \"reduced_from_18.3_percent_to_7.1_percent\"\n    },\n    \"tail_risk_metrics\": {\n      \"cvar_95_1yr_pre\": 8.7,\n      \"cvar_95_1yr_post\": 5.2,\n      \"correlation_stock_bond_post_adjustment\": -0.28\n    }\n  },\n  \"expected_outcomes\": {\n    \"risk_adjusted_return_improvement\": \"+1.4_percent_annualized_sharpe_ratio\",\n    \"drawdown_reduction\": \"projected_7.8_percentage_points_lower_peak-to-trough_loss_during_recession\",\n    \"income_generation_enhancement\": {\n      \"current_portfolio_yield\": 3.1,\n      \"projected_portfolio_yield\": 4.6,\n      \"primary_drivers\": [\"cash_yield_5.32_percent\", \"short_duration_bond_yield_4.95_percent\", \"private_credit_coupon_7.2_percent\"]\n    },\n    \"esg_quality_uplift\": {\n      \"msci_esg_rating_upgrade_path\": \"BBB_to_A\",\n      \"carbon_intensity_reduction_target\": \"0.72_to_0.49_relative_to_market\",\n      \"sustainability_score_tech_subsector_target\": \"58.3_to_72.1\"\n    },\n    \"goal_progress_impact\": {\n      \"retirement_plan_funding_ratio_stability\": \"improved_under_stress_scenarios_(+12_percent_probability_of_on_track)\",\n      \"education_fund_liquidity_coverage\": \"increased_from_14_months_to_22_months_of_tuition_costs\"\n    }\n  }\n}\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/OUTPUT_PARSING_FAILURE "
+        },
+        {
+          "step": 4,
+          "node": "recommend",
+          "query_type": "analytical",
+          "processing_mode": "deliberative",
+          "current_phase": "analyze",
+          "final_response_preview": null,
+          "error": "建议生成阶段缺少分析结果"
+        },
+        {
+          "step": 5,
+          "node": "respond",
+          "query_type": "analytical",
+          "processing_mode": "deliberative",
+          "current_phase": "analyze",
+          "final_response_preview": "无法生成响应。请检查处理流程。",
+          "error": "建议生成阶段缺少分析结果"
+        }
+      ],
+      "final_response": "无法生成响应。请检查处理流程。",
+      "error": "建议生成阶段缺少分析结果",
+      "langsmith_enabled": true,
+      "langsmith_project": "\"wealth-advisor-hybrid-agent\""
+    }
+  ]
+}
