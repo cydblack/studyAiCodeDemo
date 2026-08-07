@@ -275,9 +275,10 @@ class TracedAssistant(Assistant):
                             if langfuse:
                                 input_value = user_query if user_query else str(messages)[:500]
                                 print(f"[DEBUG] 准备设置 input: {input_value[:100]}")
-                                langfuse.update_current_span(
+                                # as_type=generation 时用 update_current_generation（model 等字段仅此 API 支持）
+                                langfuse.update_current_generation(
                                     input=input_value,
-                                    model="qwen-turbo-latest",
+                                    model="qwen-flash",
                                     metadata={
                                         "customer_id": self.customer_id,
                                         "risk_tolerance": self.customer_profile.get("risk_tolerance", "unknown"),
@@ -316,7 +317,7 @@ class TracedAssistant(Assistant):
                             try:
                                 langfuse = get_client()
                                 if langfuse:
-                                    langfuse.update_current_span(
+                                    langfuse.update_current_generation(
                                         output=None,
                                         level="ERROR",
                                         status_message=str(e)
@@ -363,7 +364,7 @@ class TracedAssistant(Assistant):
                             if langfuse:
                                 output_value = final_output if final_output else "响应已生成"
                                 print(f"[DEBUG] 准备设置 output: {output_value[:100]}")
-                                langfuse.update_current_span(
+                                langfuse.update_current_generation(
                                     output=output_value,
                                     metadata={
                                         "response_length": len(final_output),
@@ -409,7 +410,7 @@ def init_wealth_advisor_agent(customer_profile: Dict[str, Any],
                               enable_tracing: bool = True) -> Assistant:
     """初始化财富顾问智能体"""
     llm_cfg = {
-        'model': 'qwen-turbo-latest',
+        'model': 'qwen-flash',
         'timeout': 30,
         'retry_count': 3,
     }
@@ -503,7 +504,7 @@ def run_wealth_advisor(user_query: str, customer_id: str = "customer1") -> Dict[
                         if langfuse:
                             langfuse.update_current_span(
                                 metadata={
-                                    "model": "qwen-turbo-latest",
+                                    "model": "qwen-flash",
                                     "customer_id": customer_id,
                                     "risk_tolerance": customer_profile.get("risk_tolerance", "unknown"),
                                     "investment_horizon": customer_profile.get("investment_horizon", "unknown"),
@@ -595,7 +596,7 @@ def _flush_langfuse():
 
 if __name__ == "__main__":
     print("=== 混合智能体 - 财富管理投顾AI助手 ===\n")
-    print("使用模型：Qwen-Turbo-Latest")
+    print("使用模型：Qwen-flash")
     print("框架：qwen-agent")
     if langfuse_client:
         print("监测：LangFuse 已启用\n")
