@@ -27,7 +27,7 @@ Agently.set_settings(
     },
 )
 
-# 本课的文件位置
+# 文件位置
 LESSON_DIR = Path(__file__).resolve().parents[1]
 MEMORY_DIR = LESSON_DIR / ".demo_runs" / "memory_v2" / "memory"
 
@@ -74,7 +74,7 @@ for key, value in sessions.items():
     print("-" * 100)
 
 
-# # ===== 2. 模型压缩:一个会话压一次 =====
+# ========================== 2. 模型压缩:一个会话压一次 ==========================
 compressed_sessions = []
 for (project_id, session_id), session_events in sessions.items():
     session_events.sort(key=lambda e: e["turn"])  # 按对话轮次排好
@@ -125,11 +125,11 @@ for (project_id, session_id), session_events in sessions.items():
     result["session_id"] = session_id
     compressed_sessions.append(result)
 
-# # ===== 3. 文档写入 =====
+# ========================== 3. 文档写入 ==========================
 out_path = MEMORY_DIR / "session_memory.json"
 out_path.parent.mkdir(parents=True, exist_ok=True)
 out_path.write_text(
     json.dumps({"sessions": compressed_sessions}, ensure_ascii=False, indent=2),
     encoding="utf-8",
 )
-print("已写入", out_path)
+print("已写入文件", out_path)
