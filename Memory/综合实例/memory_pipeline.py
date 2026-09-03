@@ -20,8 +20,10 @@ from agently import Agently
 
 T = TypeVar("T")
 
-LESSON_DIR = Path(__file__).resolve().parents[2]
-NEW_TASK = "带5岁的女儿去上海玩两天，孩子一直想去迪士尼乐园，帮我出行程，最终路线要可执行。"
+LESSON_DIR = Path(__file__).resolve().parents[1]
+NEW_TASK = (
+    "带5岁的女儿去上海玩两天，孩子一直想去迪士尼乐园，帮我出行程，最终路线要可执行。"
+)
 PROJECT_ID = "travel-agent"
 SEMANTIC_KIND_BY_TYPE = {
     "user_preference": "user_preference_rule",
@@ -56,26 +58,18 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def configure_model() -> None:
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        load_dotenv = None
-    if load_dotenv is not None:
-        for directory in (LESSON_DIR, *LESSON_DIR.parents):
-            env_path = directory / ".env"
-            if env_path.is_file():
-                load_dotenv(env_path, override=False)
-                break
+    from dotenv import find_dotenv, load_dotenv
 
-    api_key = os.getenv("DEEPSEEK_API_KEY")
-    if not api_key:
-        raise RuntimeError("需要 DEEPSEEK_API_KEY（放在课程根目录 .env 或 shell 导出）。")
+    load_dotenv(find_dotenv())
     Agently.set_settings(
         "OpenAICompatible",
         {
-            "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-            "api_key": api_key,
-            "model": os.getenv("DEEPSEEK_DEFAULT_MODEL", "deepseek-chat"),
+            "base_url": os.getenv(
+                "DASHSCOPE_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ),
+            "api_key": os.getenv("DASHSCOPE_API_KEY"),
+            "model": "deepseek-v4-flash",
         },
     )
 
@@ -91,7 +85,9 @@ def is_transient_model_error(error: Exception) -> bool:
     )
 
 
-async def run_model_request_with_retry(call: Callable[[], Awaitable[T]], *, attempts: int = 4) -> T:
+async def run_model_request_with_retry(
+    call: Callable[[], Awaitable[T]], *, attempts: int = 4
+) -> T:
     for attempt in range(1, attempts + 1):
         try:
             return await call()
@@ -102,13 +98,19 @@ async def run_model_request_with_retry(call: Callable[[], Awaitable[T]], *, atte
     raise RuntimeError("unreachable retry state")
 
 
-async def extract_session_memories(session_events: list[dict[str, Any]]) -> dict[str, Any]:
+async def extract_session_memories(
+    session_events: list[dict[str, Any]],
+) -> dict[str, Any]:
     payload = [
         {
             "event_id": event["event_id"],
             "role": event["role"],
             "text": event["text"],
-            **({"tool": event["tool"], "status": event["status"]} if event.get("tool") else {}),
+            **(
+                {"tool": event["tool"], "status": event["status"]}
+                if event.get("tool")
+                else {}
+            ),
         }
         for event in session_events
     ]
@@ -116,8 +118,7 @@ async def extract_session_memories(session_events: list[dict[str, Any]]) -> dict
     async def request() -> dict[str, Any]:
         agent = Agently.create_agent()
         result = await (
-            agent
-            .info({"对话事件流": payload})
+            agent.info({"对话事件流": payload})
             .input("对这段对话事件流做记忆抽取。")
             .instruct(
                 [
@@ -144,8 +145,14 @@ async def extract_session_memories(session_events: list[dict[str, Any]]) -> dict
             )
             .async_start()
         )
-        if not isinstance(result, dict) or "episode_summary" not in result or "memory_items" not in result:
-            raise RuntimeError("transient_model_parse_failed: memory extraction returned invalid structure")
+        if (
+            not isinstance(result, dict)
+            or "episode_summary" not in result
+            or "memory_items" not in result
+        ):
+            raise RuntimeError(
+                "transient_model_parse_failed: memory extraction returned invalid structure"
+            )
         return result
 
     return await run_model_request_with_retry(request)
@@ -155,8 +162,7 @@ async def merge_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, A
     async def request() -> dict[str, Any]:
         agent = Agently.create_agent()
         result = await (
-            agent
-            .info(
+            agent.info(
                 {
                     "候选记忆": [
                         {
@@ -191,8 +197,12 @@ async def merge_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, A
             )
             .async_start()
         )
-        if not isinstance(result, dict) or not isinstance(result.get("merged_memories"), list):
-            raise RuntimeError("transient_model_parse_failed: merge returned invalid structure")
+        if not isinstance(result, dict) or not isinstance(
+            result.get("merged_memories"), list
+        ):
+            raise RuntimeError(
+                "transient_model_parse_failed: merge returned invalid structure"
+            )
         return result
 
     result = await run_model_request_with_retry(request)
@@ -211,7 +221,9 @@ def promotion_reason(
         for event_id in supporting_event_ids
         if event_id in event_by_id
     )
-    explicit_durable = merged_type == "user_preference" and any(member.get("durable") for member in members)
+    explicit_durable = merged_type == "user_preference" and any(
+        member.get("durable") for member in members
+    )
     if len(supporting_sessions) >= 2:
         return "repeated_across_sessions"
     if failure_backed:
@@ -222,7 +234,18 @@ def promotion_reason(
 
 
 def score_text(text: str, query: str) -> int:
-    keywords = ["孩子", "亲子", "路线", "检查", "远距离", "迪士尼", "环球", "兵马俑", "午休", "午睡"]
+    keywords = [
+        "孩子",
+        "亲子",
+        "路线",
+        "检查",
+        "远距离",
+        "迪士尼",
+        "环球",
+        "兵马俑",
+        "午休",
+        "午睡",
+    ]
     return sum(2 for keyword in keywords if keyword in text and keyword in query) + sum(
         1 for keyword in keywords if keyword in text
     )
@@ -309,7 +332,9 @@ async def build_file_memory(memory_dir: Path) -> dict[str, Path]:
     rule_index = 1
     for project_id, project_candidates in candidates_by_project.items():
         merged_memories = await merge_candidates(project_candidates)
-        candidate_by_id = {candidate["candidate_id"]: candidate for candidate in project_candidates}
+        candidate_by_id = {
+            candidate["candidate_id"]: candidate for candidate in project_candidates
+        }
         for merged in merged_memories:
             members = [
                 candidate_by_id[member_id]
@@ -319,10 +344,16 @@ async def build_file_memory(memory_dir: Path) -> dict[str, Path]:
             if not members:
                 continue
             supporting_event_ids = sorted(
-                {event_id for member in members for event_id in member["supported_event_ids"]}
+                {
+                    event_id
+                    for member in members
+                    for event_id in member["supported_event_ids"]
+                }
             )
             supporting_sessions = sorted({member["session_id"] for member in members})
-            reason = promotion_reason(str(merged.get("type")), members, supporting_event_ids, event_by_id)
+            reason = promotion_reason(
+                str(merged.get("type")), members, supporting_event_ids, event_by_id
+            )
             if reason is None:
                 kept_rows.append(
                     {
@@ -337,7 +368,9 @@ async def build_file_memory(memory_dir: Path) -> dict[str, Path]:
                 {
                     "rule_id": f"rule_{rule_index:03d}",
                     "project_id": project_id,
-                    "kind": SEMANTIC_KIND_BY_TYPE.get(str(merged.get("type")), "project_rule"),
+                    "kind": SEMANTIC_KIND_BY_TYPE.get(
+                        str(merged.get("type")), "project_rule"
+                    ),
                     "rule": merged["statement"],
                     "promotion_reason": reason,
                     "supporting_event_ids": supporting_event_ids,
@@ -345,7 +378,9 @@ async def build_file_memory(memory_dir: Path) -> dict[str, Path]:
                     "derived_from": [
                         {
                             "session_id": session_id,
-                            "summary": episode_by_session.get(session_id, {}).get("summary", ""),
+                            "summary": episode_by_session.get(session_id, {}).get(
+                                "summary", ""
+                            ),
                         }
                         for session_id in supporting_sessions
                     ],
@@ -356,8 +391,12 @@ async def build_file_memory(memory_dir: Path) -> dict[str, Path]:
     write_jsonl(semantic_path, semantic_rows)
     write_jsonl(kept_path, kept_rows)
 
-    semantic_for_task = [row for row in semantic_rows if row["project_id"] == PROJECT_ID]
-    consolidated_for_task = [row for row in consolidated_rows if row["project_id"] == PROJECT_ID]
+    semantic_for_task = [
+        row for row in semantic_rows if row["project_id"] == PROJECT_ID
+    ]
+    consolidated_for_task = [
+        row for row in consolidated_rows if row["project_id"] == PROJECT_ID
+    ]
     ranked_episodes = sorted(
         consolidated_for_task,
         key=lambda row: score_text(row["summary"], NEW_TASK),
@@ -387,7 +426,9 @@ async def build_file_memory(memory_dir: Path) -> dict[str, Path]:
             str(consolidated_path.relative_to(memory_dir.parent)),
         ],
     }
-    task_brief_path.write_text(json.dumps(task_brief, ensure_ascii=False, indent=2), encoding="utf-8")
+    task_brief_path.write_text(
+        json.dumps(task_brief, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     return {
         "raw": raw_path,
