@@ -1,25 +1,26 @@
 ﻿# studyAiCodeDemo
 
-Dylan 自用 AI Agent 学习笔记代码库，按主题分目录，从基础调用一路走到可观测、评估与通用 Agent。
+Dylan 自用 AI Agent 练习代码库，按主题分目录，从基础调用到可观测、评估与通用 Agent。
 
-## 我的学习路径
+## 代码顺序
 
 根据下列顺序阅读 / 运行：
 
 
-| 目录                | 主题              | 要点                                                  |
-| ----------------- | --------------- | --------------------------------------------------- |
-| `基础的Agent`        | 最简 LLM 调用       | DashScope 直接调模型，做情感正负向判断                            |
-| `FunctionCalling` | 工具调用            | Qwen-Agent 封装 vs DashScope 原生 `tools`；门票助手、天气助手     |
-| `MCP`             | MCP 协议          | 远程 Tavily MCP；本地自建 MCP 服务（txt 计数）                   |
-| `LangChain`       | LangChain Agent | 私募基金规则问答（工具检索 + Agent）                              |
-| `LangGraph`       | 图编排 Agent       | 深思熟虑式 / 混合式投顾助手；Prompt 外置 YAML                      |
-| `LangSmith`       | 可观测 + 评测        | LangSmith 追踪、用例集、evaluation                         |
-| `OpenEvals`       | 开源评测器           | correctness、RAG、toxicity、hallucination 等指标脚本        |
-| `DeepEval`        | DeepEval        | 对投顾助手做 AnswerRelevancy / Hallucination / GEval      |
-| `langFuse`        | 可观测             | Langfuse 追踪（含 Qwen-Agent / 混合投顾）                    |
-| `OpenManus_cyd`   | 通用 Agent 框架     | OpenManus 本地改版；`config.toml` + 环境变量；可选 Daytona 沙箱   |
-| `gui-plus`        | GUI 视觉操作模型      | DashScope `gui-plus`：截图 → JSON 原子操作（CLICK / TYPE 等） |
+| #   | 目录                | 主题              | 内容                                                  |
+| --- | ----------------- | --------------- | --------------------------------------------------- |
+| 1   | `BaseQwenAgent`   | 最简 Qwen Agent   | 最基础的 Qwen Agent，使用 DashScope 直接调模型，做一下情感正负向判断的例子    |
+| 2   | `FunctionCalling` | 工具调用            | Qwen-Agent 封装 vs DashScope 原生 `tools`；门票助手、天气助手     |
+| 3   | `MCP`             | MCP 协议          | 远程 Tavily MCP；本地自建 MCP 服务（txt 计数）                   |
+| 4   | `LangChain`       | LangChain Agent | 私募基金规则问答（工具检索 + Agent）                              |
+| 5   | `LangGraph`       | 图编排 Agent       | 深思熟虑式 / 混合式投顾助手；Prompt 外置 YAML                      |
+| 6   | `LangSmith`       | 可观测 + 评测        | LangSmith 追踪、用例集、evaluation                         |
+| 7   | `OpenEvals`       | 开源评测器           | correctness、RAG、toxicity、hallucination 等指标脚本        |
+| 8   | `DeepEval`        | DeepEval        | 对投顾助手做 AnswerRelevancy / Hallucination / GEval      |
+| 9   | `langFuse`        | 可观测             | Langfuse 追踪（含 Qwen-Agent / 混合投顾）                    |
+| 10  | `OpenManus_cyd`   | 通用 Agent 框架     | OpenManus 本地改版；`config.toml` + 环境变量；可选 Daytona 沙箱   |
+| 11  | `gui-plus`        | GUI 视觉操作模型      | DashScope `gui-plus`：截图 → JSON 原子操作（CLICK / TYPE 等） |
+| 12  | `Memory`          | Agent 长期记忆      | 会话压缩、升格、召回、心跳；综合实例把文件记忆接入 Workspace 再对照出行程          |
 
 
 
@@ -61,7 +62,7 @@ python -m venv .venv
 
 | 目录                | 需要的环境变量                                                                                         |
 | ----------------- | ----------------------------------------------------------------------------------------------- |
-| `基础的Agent`        | `DASHSCOPE_API_KEY`                                                                             |
+| `BaseQwenAgent`   | `DASHSCOPE_API_KEY`                                                                             |
 | `FunctionCalling` | `DASHSCOPE_API_KEY`                                                                             |
 | `MCP`（本地 MCP）     | `DASHSCOPE_API_KEY`                                                                             |
 | `MCP`（Tavily MCP） | `DASHSCOPE_API_KEY` + `TAVILY_API_KEY`                                                          |
@@ -73,6 +74,7 @@ python -m venv .venv
 | `langFuse`        | `DASHSCOPE_API_KEY` + `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY`（可选 `LANGFUSE_BASE_URL`）     |
 | `OpenManus_cyd`   | `DASHSCOPE_API_KEY`；用 Daytona 沙箱时再加 `DAYTONA_API_KEY`                                           |
 | `gui-plus`        | `DASHSCOPE_API_KEY`                                                                             |
+| `Memory`          | `DASHSCOPE_API_KEY`                                                                             |
 
 
 
@@ -105,28 +107,6 @@ $env:DAYTONA_API_KEY="你的key"
 
 持久化可写入「系统环境变量」或用户级环境变量；勿把真实 key 写进仓库文件。
 
-## 目录速览
-
-```
-基础的Agent/             # 最基础的千问调用
-FunctionCalling/         # Function Calling 两种写法 + 门票/天气助手
-MCP/                     # Tavily MCP Agent + 本地 MCP 服务
-LangChain/               # 私募基金问答助手
-LangGraph/               # 深思熟虑式 / 混合式投顾（LangGraph）
-LangSmith/               # 助手 + LangSmith 追踪与评测
-OpenEvals/               # OpenEvals 各类 evaluator 示例
-DeepEval/                # DeepEval 评估投顾助手
-langFuse/                # 助手 + Langfuse
-OpenManus_cyd/           # OpenManus 通用 Agent（本地改版）
-gui-plus/                # gui-plus 视觉 GUI 操作示例
-```
-
-
-
-## 章节补充说明
-
-
-
 ### `OpenManus_cyd`
 
 - 从 `config/config.example.toml` 复制出本地 `config/config.toml`（该文件已被 gitignore，勿提交密钥）。
@@ -144,9 +124,25 @@ gui-plus/                # gui-plus 视觉 GUI 操作示例
 
 
 
+### `Memory`
+
+- 主线看 `Memory/MemoryV2/README.md`：Step1–Step5 压缩与召回，Step6 心跳（有新 `event_id` 才跑前五步）。
+- `MemoryV1` 是文件分层管线存档，日常不用看。
+- 综合实例：`python Memory/综合实例/run.py`，整理后导入本目录 `FileMemoryWorkspace`，对照有/无记忆两份行程。
+- 材料在 `Memory/materials/`，产物在 `Memory/.demo_runs/`。
+
+
+
+## 模型选择
+
+模型基本上都选的如 `deepseek-v` 、 `qwen-flash` 之类的便宜模型，主要是省金币
+
+
+
 ## 说明
 
-- 纯学习用途，代码以可跑通、好对照为主，不做生产封装。
+- 纯学习用途，代码以可跑通、好对照为主，不可用于生成环境。
 - 同一业务场景（投顾助手）会在 LangGraph / LangSmith / Langfuse / DeepEval 中反复出现，方便横向对比「编排 → 追踪 → 评测」。
+- `Memory` 用同一套亲子行程对话，对照「压缩 → 升格 → 召回 → 有/无记忆出行程」。
 - Windows 环境；运行前确认已激活虚拟环境并设置好对应 API Key。
 
