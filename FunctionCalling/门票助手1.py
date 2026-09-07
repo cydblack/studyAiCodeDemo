@@ -8,13 +8,21 @@ from qwen_agent.tools.base import BaseTool, register_tool
 
 # 定义资源文件根目录
 ROOT_RESOURCE = os.path.join(os.path.dirname(__file__), "resource")
+# 本地 SQLite 数据库（与本文件同目录）
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ubr.db")
+ENGINE = create_engine("sqlite:///" + DB_PATH.replace("\\", "/"))
 
 # 配置 DashScope
-dashscope.api_key = os.getenv("DASHSCOPE_API_KEY", "")  # 从环境变量获取 API Key
+dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")  # 从环境变量获取 API Key
 dashscope.timeout = 30  # 设置超时时间为 30 秒
 
 # ====== 门票助手 system prompt 和函数描述 ======
 system_prompt = """我是门票助手，以下是关于门票订单表相关的字段，我可能会编写对应的SQL，对数据进行查询
+当前使用本地 SQLite 数据库，请编写 SQLite 语法的 SQL，不要使用 MySQL 函数（如 DATE_FORMAT、YEARWEEK）。
+日期函数示例：
+- 按周：strftime('%Y-%W', order_time)
+- 按月：strftime('%Y-%m', order_time)
+- 按日：date(order_time)
 -- 门票订单表
 CREATE TABLE tkt_orders (
     order_time DATETIME,             -- 订单日期
@@ -31,17 +39,21 @@ CREATE TABLE tkt_orders (
     order_value DECIMAL(10,2),       -- 订单金额
     quantity INT                     -- 商品数量
 );
-一日门票，对应多种SKU：
+查询示例：
+1.一日门票，对应多种SKU：
 Universal Studios Beijing One-Day Dated Ticket-Standard
 Universal Studios Beijing One-Day Dated Ticket-Child
 Universal Studios Beijing One-Day Dated Ticket-Senior
-二日门票，对应多种SKU：
+2.二日门票，对应多种SKU：
 USB 1.5-Day Dated Ticket Standard
 USB 1.5-Day Dated Ticket Discounted
-一日门票、二日门票查询
+3.一日门票、二日门票查询
 SUM(CASE WHEN SKU LIKE 'Universal Studios Beijing One-Day%' THEN quantity ELSE 0 END) AS one_day_ticket_sales,
 SUM(CASE WHEN SKU LIKE 'USB%' THEN quantity ELSE 0 END) AS two_day_ticket_sales
-我将回答用户关于门票相关的问题
+
+其他说明：
+1.我将回答用户关于门票相关的问题
+2.数据库中的数据只有2023年5月-8月的数据，超出部分提示用户：“数据截止到2023年8月31日，超出部分无法查询”。
 """
 
 
@@ -67,16 +79,8 @@ class ExcSQLTool(BaseTool):
 
         args = json.loads(params)
         sql_input = args["sql_input"]
-        database = args.get("database", "ubr")
-        # 创建数据库连接
-        engine = create_engine(
-            f"mysql+mysqlconnector://student123:student321@rm-uf6z891lon6dxuqblqo.mysql.rds.aliyuncs.com:3306/{database}?charset=utf8mb4",
-            connect_args={"connect_timeout": 10},
-            pool_size=10,
-            max_overflow=20,
-        )
         try:
-            df = pd.read_sql(sql_input, engine)
+            df = pd.read_sql(sql_input, ENGINE)
             # 返回前10行，防止数据过多
             return df.head(10).to_markdown(index=False)
         except Exception as e:
@@ -162,9 +166,9 @@ def app_gui():
         # 配置聊天界面，列举3个典型门票查询问题
         chatbot_config = {
             "prompt.suggestions": [
-                "2023年4、5、6月一日门票，二日门票的销量多少？帮我按照周进行统计",
+                "2023年5、6、7月一日门票，二日门票的销量多少？帮我按照周进行统计",
                 "2023年7月的不同省份的入园人数统计",
-                "帮我查看2023年10月1-7日销售渠道订单金额排名",
+                "帮我查看2023年8月1-7日销售渠道订单金额排名",
             ]
         }
         print("Web 界面准备就绪，正在启动服务...")

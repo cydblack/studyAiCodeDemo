@@ -6,22 +6,45 @@ Dylan 自用 AI Agent 练习代码库，按主题分目录，从基础调用到�
 
 根据下列顺序阅读 / 运行：
 
+#### 1. `BaseQwenAgent`**（最简 Qwen Agent）**
 
-| #   | 目录                | 主题              | 内容                                                  |
-| :---: | ----------------- | --------------- | --------------------------------------------------- |
-| 1   | `BaseQwenAgent`   | 最简 Qwen Agent   | 最基础的 Qwen Agent，使用 DashScope 直接调模型，做一下情感正负向判断的例子    |
-| 2   | `FunctionCalling` | 工具调用            | Qwen-Agent 封装 vs DashScope 原生 `tools`；门票助手、天气助手     |
-| 3   | `MCP`             | MCP 协议          | 远程 Tavily MCP；本地自建 MCP 服务（txt 计数）                   |
-| 4   | `LangChain`       | LangChain Agent | 私募基金规则问答（工具检索 + Agent）                              |
-| 5   | `LangGraph`       | 图编排 Agent       | 深思熟虑式 / 混合式投顾助手；Prompt 外置 YAML                      |
-| 6   | `LangSmith`       | 可观测 + 评测        | LangSmith 追踪、用例集、evaluation                         |
-| 7   | `OpenEvals`       | 开源评测器           | correctness、RAG、toxicity、hallucination 等指标脚本        |
-| 8   | `DeepEval`        | DeepEval        | 对投顾助手做 AnswerRelevancy / Hallucination / GEval      |
-| 9   | `langFuse`        | 可观测             | Langfuse 追踪（含 Qwen-Agent / 混合投顾）                    |
-| 10  | `OpenManus_cyd`   | 通用 Agent 框架     | OpenManus 本地改版；`config.toml` + 环境变量；可选 Daytona 沙箱   |
-| 11  | `gui-plus`        | GUI 视觉操作模型      | DashScope `gui-plus`：截图 → JSON 原子操作（CLICK / TYPE 等） |
-| 12  | `Memory`          | Agent 长期记忆      | 会话压缩、升格、召回、心跳；综合实例把文件记忆接入 Workspace 再对照出行程          |
+- 最基础的 Qwen Agent
+- 使用 DashScope 直接调模型
+- 功能：情感正负向判断
 
+#### 2. `FunctionCalling`**（工具调用）**
+
+（1） 门票助手1：
+
+- 使用 `Qwen-Agent` 封装
+- 原本使用链接数据库，后来改为本地 `SQLite` 文件
+- 使用的是 `qwen` 的 `tools` 注册方式
+
+（2） 门票助手2：
+
+- 在（1）的基础上，增加了图表信息的展示
+
+
+1. `MCP`（MCP 协议）
+  远程 Tavily MCP；本地自建 MCP 服务（txt 计数）
+2. `LangChain`（LangChain Agent）
+  私募基金规则问答（工具检索 + Agent）
+3. `LangGraph`（图编排 Agent）
+  深思熟虑式 / 混合式投顾助手；Prompt 外置 YAML
+4. `LangSmith`（可观测 + 评测）
+  LangSmith 追踪、用例集、evaluation
+5. `OpenEvals`（开源评测器）
+  correctness、RAG、toxicity、hallucination 等指标脚本
+6. `DeepEval`（DeepEval）
+  对投顾助手做 AnswerRelevancy / Hallucination / GEval
+7. `langFuse`（可观测）
+  Langfuse 追踪（含 Qwen-Agent / 混合投顾）
+8. `OpenManus_cyd`（通用 Agent 框架）
+  OpenManus 本地改版；`config.toml` + 环境变量；可选 Daytona 沙箱
+9. `gui-plus`（GUI 视觉操作模型）
+  DashScope `gui-plus`：截图 → JSON 原子操作（CLICK / TYPE 等）
+10. `Memory`（Agent 长期记忆）
+  会话压缩、升格、召回、心跳；综合实例把文件记忆接入 Workspace 再对照出行程
 
 
 
@@ -136,8 +159,6 @@ $env:DAYTONA_API_KEY="你的key"
 ## 模型选择
 
 模型基本上都选的如 `deepseek-v` 、 `qwen-flash` 之类的便宜模型，主要是省金币
-
-
 
 ## 说明
 
