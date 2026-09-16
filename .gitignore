@@ -12,6 +12,10 @@ env/
 credentials.json
 serviceAccount*.json
 
+# 运行产物
+.demo_runs/
+Memory/.demo_runs/
+
 # Python
 __pycache__/
 *.py[cod]

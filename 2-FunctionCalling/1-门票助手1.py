@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# coding: utf-8
+
 import os
 import dashscope
 from qwen_agent.agents import Assistant
@@ -54,35 +57,17 @@ SUM(CASE WHEN SKU LIKE 'USB%' THEN quantity ELSE 0 END) AS two_day_ticket_sales
 其他说明：
 1.我将回答用户关于门票相关的问题
 2.数据库中的数据只有2023年5月-8月的数据，超出部分提示用户：“数据截止到2023年8月31日，超出部分无法查询”。
-3.每当 exc_sql 工具返回 markdown 表格和图片时，你必须原样输出工具返回的全部内容（包括图片 markdown），不要只总结表格，也不要省略图片。这样用户才能直接看到表格和图片。
 """
-
-functions_desc = [
-    {
-        "name": "exc_sql",
-        "description": "对于生成的SQL，进行SQL查询",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "sql_input": {
-                    "type": "string",
-                    "description": "生成的SQL语句",
-                }
-            },
-            "required": ["sql_input"],
-        },
-    },
-]
 
 
 # ====== exc_sql 工具类实现 ======
 @register_tool("exc_sql")
 class ExcSQLTool(BaseTool):
     """
-    SQL查询工具，执行传入的SQL语句并返回结果，并自动进行可视化。
+    SQL查询工具，执行传入的SQL语句并返回结果。
     """
 
-    description = "对于生成的SQL，进行SQL查询，并自动可视化"
+    description = "对于生成的SQL，进行SQL查询"
     parameters = [
         {
             "name": "sql_input",
@@ -94,58 +79,15 @@ class ExcSQLTool(BaseTool):
 
     def call(self, params: str, **kwargs) -> str:
         import json
-        import matplotlib.pyplot as plt
-        import io, os, time
 
         args = json.loads(params)
         sql_input = args["sql_input"]
-
         try:
             df = pd.read_sql(sql_input, ENGINE)
-            md = df.head(10).to_markdown(index=False)
-            # 自动推断x/y字段
-            x_candidates = df.select_dtypes(include=["object"]).columns.tolist()
-            if not x_candidates:
-                x_candidates = df.columns.tolist()
-            x = x_candidates[0]
-            y_candidates = df.select_dtypes(include=["number"]).columns.tolist()
-            y_fields = y_candidates
-            # 绘制柱状图
-            plt.figure(figsize=(8, 5))
-            bar_width = 0.35 if len(y_fields) > 1 else 0.6
-            x_labels = df[x].astype(str)
-            x_pos = range(len(df))
-            for idx, y_col in enumerate(y_fields):
-                plt.bar(
-                    [p + idx * bar_width for p in x_pos],
-                    df[y_col],
-                    width=bar_width,
-                    label=y_col,
-                )
-            plt.xlabel(x)
-            plt.ylabel(",".join(y_fields))
-            plt.title(f"{' & '.join(y_fields)} by {x}")
-            plt.xticks(
-                [p + bar_width * (len(y_fields) - 1) / 2 for p in x_pos],
-                x_labels,
-                rotation=45,
-                ha="right",
-            )
-            plt.legend()
-            plt.tight_layout()
-            # 自动创建目录
-            save_dir = os.path.join(os.path.dirname(__file__), "image_show")
-            os.makedirs(save_dir, exist_ok=True)
-            # 生成唯一文件名
-            filename = f"bar_{int(time.time()*1000)}.png"
-            save_path = os.path.join(save_dir, filename)
-            plt.savefig(save_path)
-            plt.close()
-            img_path = os.path.join("image_show", filename)
-            img_md = f"![柱状图]({img_path})"
-            return f"{md}\n\n{img_md}"
+            # 返回前10行，防止数据过多
+            return df.head(10).to_markdown(index=False)
         except Exception as e:
-            return f"SQL执行或可视化出错: {str(e)}"
+            return f"SQL执行出错: {str(e)}"
 
 
 # ====== 初始化门票助手服务 ======
