@@ -24,11 +24,10 @@ Dylan 自用 AI Agent 练习代码库，按主题分目录，从基础调用到�
 
 - 在（1）的基础上，增加了图表信息的展示
 
-
 1. `MCP`（MCP 协议）
   远程 Tavily MCP；本地自建 MCP 服务（txt 计数）
 2. `LangChain`（LangChain 1.x 写法）
-  百炼 OpenAI 兼容接口（`ChatOpenAI` + `deepseek-v4-flash`）；LCEL 参数传递、SerpAPI 搜索 Agent、自定义 Function、短期记忆、本地知识客服；私募基金规则问答仍在
+  百炼 OpenAI 兼容接口（`ChatOpenAI`）；LCEL 参数传递、SerpAPI 搜索、自定义 Function、短期记忆、本地知识客服；LLM 自选工具 / 网络故障诊断 Agent / LCEL 多任务链；对照一份不调模型的 LCEL 工具链；私募基金规则问答仍在。说明见 `LangChain/README.md`。
 3. `ACP`（Agent Client Protocol）
   官方 Codex ACP 最简连接（Win/Mac）；主 Agent 拆任务板；worker smoke；上下文隔离；TriggerFlow 主循环跑杭州三日游团建
 4. `LangGraph`（图编排 Agent）
@@ -65,22 +64,22 @@ python -m venv .venv
 仓库脚本通过 `os.getenv` / `os.environ` 读取的变量如下（密钥放环境变量或本地 `.env`，已在 `.gitignore`，不要提交进仓库）。
 
 
-| 变量                     | 必需程度              | 用途                                                               |
-| ---------------------- | ----------------- | ---------------------------------------------------------------- |
-| `DASHSCOPE_API_KEY`    | 几乎所有章节必需          | 通义千问 / 百炼（模型调用）                                                   |
-| `DASHSCOPE_BASE_URL`   | 可选                  | 百炼 OpenAI 兼容地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| `SERPAPI_API_KEY`      | 跑 LangChain 搜索 Agent 时必需 | `serpapi-search-tools` 网页搜索                                      |
-| `DEEPSEEK_API_KEY`     | 跑 ACP 主 Agent 拆任务板时必需 | `ACP/scripts/01`、`04` 的 DeepSeek 主 Agent                           |
-| `LANGSMITH_API_KEY`    | 跑 LangSmith 时必需   | LangSmith 鉴权（[smith.langchain.com](https://smith.langchain.com)） |
-| `LANGCHAIN_TRACING_V2` | 跑 LangSmith 时必需   | 设为 `true` 开启追踪；代码里读此开关                                           |
-| `LANGCHAIN_PROJECT`    | 可选                | LangSmith 项目名，默认多为 `wealth-advisor-hybrid-agent`                 |
-| `LANGCHAIN_ENDPOINT`   | 可选                | LangSmith API 端点，不设则用官方默认                                        |
-| `LANGFUSE_PUBLIC_KEY`  | 跑 Langfuse 时必需    | Langfuse 公钥                                                      |
-| `LANGFUSE_SECRET_KEY`  | 跑 Langfuse 时必需    | Langfuse 私钥                                                      |
-| `LANGFUSE_BASE_URL`    | 可选                | 默认 `https://cloud.langfuse.com`                                  |
-| `OPENAI_API_KEY`       | 跑 DeepEval 时必需    | DeepEval 评审模型（如 gpt-4o-mini）                                     |
-| `TAVILY_API_KEY`       | 跑 Tavily MCP 时必需  | `MCP` 远程搜索 Agent                                                 |
-| `DAYTONA_API_KEY`      | 跑 OpenManus 沙箱时可选 | `OpenManus_cyd` Daytona 云沙箱；`config.toml` 中可留空由环境变量注入            |
+| 变量                     | 必需程度                     | 用途                                                                    |
+| ---------------------- | ------------------------ | --------------------------------------------------------------------- |
+| `DASHSCOPE_API_KEY`    | 几乎所有章节必需                 | 通义千问 / 百炼（模型调用）                                                       |
+| `DASHSCOPE_BASE_URL`   | 可选                       | 百炼 OpenAI 兼容地址，默认 `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `SERPAPI_API_KEY`      | 跑 LangChain 搜索 Agent 时必需 | `serpapi-search-tools` 网页搜索                                           |
+| `DEEPSEEK_API_KEY`     | 跑 ACP 主 Agent 拆任务板时必需    | `ACP/scripts/01`、`04` 的 DeepSeek 主 Agent                              |
+| `LANGSMITH_API_KEY`    | 跑 LangSmith 时必需          | LangSmith 鉴权（[smith.langchain.com](https://smith.langchain.com)）      |
+| `LANGCHAIN_TRACING_V2` | 跑 LangSmith 时必需          | 设为 `true` 开启追踪；代码里读此开关                                                |
+| `LANGCHAIN_PROJECT`    | 可选                       | LangSmith 项目名，默认多为 `wealth-advisor-hybrid-agent`                      |
+| `LANGCHAIN_ENDPOINT`   | 可选                       | LangSmith API 端点，不设则用官方默认                                             |
+| `LANGFUSE_PUBLIC_KEY`  | 跑 Langfuse 时必需           | Langfuse 公钥                                                           |
+| `LANGFUSE_SECRET_KEY`  | 跑 Langfuse 时必需           | Langfuse 私钥                                                           |
+| `LANGFUSE_BASE_URL`    | 可选                       | 默认 `https://cloud.langfuse.com`                                       |
+| `OPENAI_API_KEY`       | 跑 DeepEval 时必需           | DeepEval 评审模型（如 gpt-4o-mini）                                          |
+| `TAVILY_API_KEY`       | 跑 Tavily MCP 时必需         | `MCP` 远程搜索 Agent                                                      |
+| `DAYTONA_API_KEY`      | 跑 OpenManus 沙箱时可选        | `OpenManus_cyd` Daytona 云沙箱；`config.toml` 中可留空由环境变量注入                 |
 
 
 
@@ -95,7 +94,7 @@ python -m venv .venv
 | `MCP`（本地 MCP）     | `DASHSCOPE_API_KEY`                                                                             |
 | `MCP`（Tavily MCP） | `DASHSCOPE_API_KEY` + `TAVILY_API_KEY`                                                          |
 | `LangChain`       | `DASHSCOPE_API_KEY`；搜索 Agent 再加 `SERPAPI_API_KEY`                                               |
-| `ACP`             | `DEEPSEEK_API_KEY`（拆任务板 / 主循环）；Codex ACP worker 需要本机 Node                                        |
+| `ACP`             | `DEEPSEEK_API_KEY`（拆任务板 / 主循环）；Codex ACP worker 需要本机 Node                                       |
 | `LangGraph`       | `DASHSCOPE_API_KEY`                                                                             |
 | `LangSmith`       | `DASHSCOPE_API_KEY` + `LANGSMITH_API_KEY` + `LANGCHAIN_TRACING_V2=true`（可选 `LANGCHAIN_PROJECT`） |
 | `OpenEvals`       | `DASHSCOPE_API_KEY`；对接 LangSmith 时再加 `LANGSMITH_API_KEY`（及 tracing 相关）                          |
@@ -113,7 +112,7 @@ python -m venv .venv
 ```powershell
 # 通义 / 百炼（多数脚本）
 $env:DASHSCOPE_API_KEY="你的key"
-# $env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 # SerpAPI（LangChain 搜索 Agent）
 $env:SERPAPI_API_KEY="你的key"
@@ -145,12 +144,15 @@ $env:DAYTONA_API_KEY="你的key"
 
 ### `LangChain`
 
-- 2026-09 起不再用已停更的 `langchain_community.ChatTongyi` / `load_tools(["serpapi"])`。
-- 模型：`ChatOpenAI` + 百炼 `compatible-mode/v1`，示例模型 `deepseek-v4-flash`。
+- 2026-09 起不再用已停更的 `langchain_community.ChatTongyi` / `load_tools(["serpapi"])`（`6` 仍用 `ChatTongyi`）。
+- 模型：`ChatOpenAI` + 百炼 `compatible-mode/v1`；`1–7` 多为 `deepseek-v4-flash`，`8`、`9` 为 `qwen-turbo`。
 - 搜索：`serpapi-search-tools` 的 `web_search(provider="langchain")`。
-- 入口示例：`1-LLMChain-参数传递.py`、`2-LLMChain-tool使用.py`、`3-LLMChain-调用Fuction.py`、`4-带短期记忆的LLMChain.py`、`5-本地知识客服.py`。
+- 入口：`1`–`10`，按编号阅读；逐文件说明见 `LangChain/README.md`。
+- `7` 由模型自己选本地工具；`8` 是模拟网络诊断 Agent；`9` 是 LCEL 翻译/分析/回译链（用 `.stream()` 流式输出）；`10` 不调大模型，工具顺序由代码写死，用来对照 `7`。
 - 私募基金问答仍在 `6-ReAct私募基金问答助手.py`。
-- 依赖见 `LangChain/requirements.txt`。
+- 依赖见 `LangChain/requirements.txt`。`10` 不需要 API Key。
+
+
 
 ### `ACP`
 
@@ -159,6 +161,8 @@ $env:DAYTONA_API_KEY="你的key"
 - 业务材料：`ACP/materials/product_goal.txt`；产物：`ACP/.demo_runs/`。
 - 另有 `ACP/Demo/demo1.py`（Agently TriggerFlow，不走 ACP）。
 - 说明见 `ACP/scripts/README.md`。Windows 上用 `node.exe` + `npx-cli.js` 启动 adapter，不要直接跑 `npx.cmd`。
+
+
 
 ### `OpenManus_cyd`
 
