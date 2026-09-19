@@ -1,0 +1,8 @@
+json5==0.9.14
+langchain_community==0.4.1
+langchain_core==1.2.8
+langchain_text_splitters==1.1.0
+llama_index==0.14.13
+llama-index-llms-dashscope==0.7.0
+llama-index-embeddings-dashscope==0.6.0
+qwen-agent[rag]==0.0.34
