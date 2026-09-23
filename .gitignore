@@ -15,6 +15,7 @@ serviceAccount*.json
 # 运行产物
 .demo_runs/
 Memory/.demo_runs/
+workspace/
 
 # Python
 __pycache__/
@@ -38,4 +39,5 @@ htmlcov/
 # 系统文件
 .DS_Store
 Thumbs.db
-Memory/.demo_runs/
+
+**/.ipynb_checkpoints/
