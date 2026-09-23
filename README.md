@@ -28,7 +28,7 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 |     |                 | `LCEL_demo`           | LCEL 翻译 → 分析 → 回译，流式输出       |
 |     |                 | `LCEL_工具链组合形式-不使用大模型` | 工具顺序由代码写死，对照上一则              |
 | 8   | RAG_Agent       | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10 |
-|     |                 | `西游记_word2vec`        | jieba 分词后训练 Word2Vec，比较人物相似度 |
+|     |                 | `西游记_word2vec`        | jieba 分词后训练 Word2Vec；`BOOK` 在西游记 / 三国演义间切换 |
 | 88  | Tools           | `Jieba分词`             | 对字符串列表做中文分词                  |
 |     |                 | `特征词获取`               | 酒店描述 n-gram 词频 TopK          |
 |     |                 | `gui-plus`            | 截图转 GUI 操作（从仓库根目录迁入）         |
@@ -207,11 +207,12 @@ $env:DAYTONA_API_KEY="你的key"
   - 入口：`python 8-RAG_Agent/酒店推荐-BM25-TF-IDF/酒店推荐.py`。路径按脚本所在目录解析，从仓库根目录启动即可
   - 依赖见该目录 `requirements.txt`（pandas、scikit-learn、matplotlib）
 2. `西游记_word2vec`
-  - `step1_word_seg.py`：jieba 对 `西游记/source` 分词，空格拼接后写到 `西游记/segment`
-  - `step2_word_similarity.py`：用分词结果训练两套 Word2Vec，保存 `models/xyl_word2Vec_1.model`、`models/xyl_word2Vec_2.model`，并打印「孙悟空」和相关人物的相似度
-  - `step3_use_model.py`：只加载 `xyl_word2Vec_2.model`，计算「孙悟空」和「菩提」的相似度，并做 `唐僧 + 孙悟空 - 猪八戒`
+  - 三份脚本顶部用 `BOOK` 选语料，默认 `"西游记"`。改成 `"三国演义"` 后，分词、训练、加载都走对应目录
+  - `step1_word_seg.py`：jieba 对 `{BOOK}/source` 分词，空格拼接后写到 `{BOOK}/segment`
+  - `step2_word_similarity.py`：用分词结果训练两套 Word2Vec。第一套保存 `{BOOK}/model/word2Vec_1.model`，第二套由 `model2.save` 保存 `{BOOK}/model/word2Vec_2.model`，并打印「孙悟空」和相关人物的相似度
+  - `step3_use_model.py`：加载 `{BOOK}/model/word2Vec_2.model`。默认算「孙悟空」和「菩提」的相似度，并做 `唐僧 + 孙悟空 - 猪八戒`。三国演义的查询（曹操、刘备、张飞）写在注释里
+  - 模型目录和 `*.md` 已在 `.gitignore` 中，克隆后需要自己跑 step1、step2 生成分词结果和模型
   - 查询用的词必须和分词结果一致。jieba 把「金角大王」切成了「金角」和「大王」
-  - 参数和 gensim 接口说明见 `西游记_word2vec/step2_word_similarity.md`
   - 依赖见该目录 `requirements.txt`（jieba、gensim）。本机是 Python 3.13 时安装 `gensim==4.4.0`，`4.3.3` 没有对应的安装包
 
 
@@ -275,6 +276,6 @@ $env:DAYTONA_API_KEY="你的key"
 - 同一业务场景（投顾助手）会在 LangGraph / LangSmith / Langfuse / DeepEval 中反复出现，方便横向对比「编排 → 追踪 → 评测」。
 - `ACP` 用杭州三日游团建目标，对照「主 Agent 拆板 → Codex worker 执行 → 上下文隔离 → TriggerFlow 汇总」。
 - `Memory` 用同一套亲子行程对话，对照「压缩 → 升格 → 召回 → 有/无记忆出行程」。
-- `8-RAG_Agent` 用西雅图酒店对照「词频 → TF-IDF 推荐」，用《西游记》对照「分词 → Word2Vec → 加载模型算相似度」。
+- `8-RAG_Agent` 用西雅图酒店对照「词频 → TF-IDF 推荐」，用《西游记》/《三国演义》对照「分词 → Word2Vec → 加载模型算相似度」。
 - Windows 环境；运行前确认已激活虚拟环境并设置好对应 API Key。
 
