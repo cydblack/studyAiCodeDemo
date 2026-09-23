@@ -41,3 +41,5 @@ htmlcov/
 Thumbs.db
 
 **/.ipynb_checkpoints/
+8-RAG_Agent/西游记_word2vec/*/model/
+8-RAG_Agent/西游记_word2vec/*.md

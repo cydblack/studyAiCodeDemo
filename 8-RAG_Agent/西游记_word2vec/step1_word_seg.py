@@ -4,10 +4,13 @@ import jieba
 import os
 from utils import files_processing
 
+BOOK = "西游记"
+# BOOK = "三国演义"
+
 # 按脚本所在目录定位，避免从仓库根目录启动时找不到文件
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-source_folder = os.path.join(_BASE_DIR, "西游记", "source")
-segment_folder = os.path.join(_BASE_DIR, "西游记", "segment")
+source_folder = os.path.join(_BASE_DIR, BOOK, "source")
+segment_folder = os.path.join(_BASE_DIR, BOOK, "segment")
 
 
 def segment_lines(file_list, segment_out_dir, stopwords=[]):
