@@ -6,7 +6,7 @@ import json
 from openai import OpenAI
 
 # FAISS 向量库目录。使用纯英文路径，faiss.write_index 在 Windows 上打不开中文路径
-FAISS_DATABASE = r"D:\\vector_db"
+FAISS_DATABASE = r"D:\\faiss\\vector_db"
 dimension = 1024  # 向量维度
 k = 3  # 查找最近的3个邻居
 
@@ -188,7 +188,7 @@ def main():
     # Step4. 保存到本地
     save_faiss_database(index, metadata_store, FAISS_DATABASE)
 
-     # Step5. 从本地加载，后续查询使用加载结果
+    # Step5. 从本地加载，后续查询使用加载结果
     index, metadata_store, config = load_faiss_database(FAISS_DATABASE)
     print(f"已从本地加载向量库，共 {config['total_vectors']} 个向量。")
 
