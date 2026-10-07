@@ -27,11 +27,14 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 |     |                 | `网络故障诊断Agent`         | 模拟 ping / DNS / 网卡 / 日志诊断    |
 |     |                 | `LCEL_demo`           | LCEL 翻译 → 分析 → 回译，流式输出       |
 |     |                 | `LCEL_工具链组合形式-不使用大模型` | 工具顺序由代码写死，对照上一则              |
-| 8   | RAG_Agent       | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10 |
-|     |                 | `西游记_word2vec`        | jieba 分词后训练 Word2Vec；`BOOK` 在西游记 / 三国演义间切换 |
+| 8   | BM25            | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10 |
+| 9   | Embedding       | `向量数据库`               | 百炼 `text-embedding-v4` 建 FAISS 索引，用自定义 ID 回查元数据 |
+|     |                 | `BGE-m3`              | 本地下载 BGE-M3，计算句向量余弦相似度        |
+| 10  | RAG_Agent       | `基础RAG_Agent(pdf-Faiss)` | 读考核办法 PDF，切分后用 FAISS 做问答     |
 | 88  | Tools           | `Jieba分词`             | 对字符串列表做中文分词                  |
 |     |                 | `特征词获取`               | 酒店描述 n-gram 词频 TopK          |
 |     |                 | `gui-plus`            | 截图转 GUI 操作（从仓库根目录迁入）         |
+|     |                 | `西游记_word2vec`        | jieba 分词后训练 Word2Vec；`BOOK` 在西游记 / 三国演义间切换 |
 
 
 
@@ -90,8 +93,10 @@ python -m venv .venv
 | `OpenManus_cyd`     | `DASHSCOPE_API_KEY`；用 Daytona 沙箱时再加 `DAYTONA_API_KEY`                                           |
 | `88-Tools/gui-plus` | `DASHSCOPE_API_KEY`                                                                             |
 | `Memory`            | `DASHSCOPE_API_KEY`                                                                             |
-| `8-RAG_Agent`       | 不需要 API Key                                                                                     |
-| `88-Tools`          | `gui-plus` 需要 `DASHSCOPE_API_KEY`；分词和特征词获取不需要                                                   |
+| `8-BM25`            | 不需要 API Key                                                                                     |
+| `9-Embedding`       | `向量数据库` 需要 `DASHSCOPE_API_KEY`；`BGE-m3` 使用本地模型，不需要百炼 Key                                      |
+| `10-RAG_Agent`      | `DASHSCOPE_API_KEY`                                                                             |
+| `88-Tools`          | `gui-plus` 需要 `DASHSCOPE_API_KEY`；分词、特征词获取和 Word2Vec 不需要                                         |
 
 
 
@@ -197,25 +202,41 @@ $env:DAYTONA_API_KEY="你的key"
 
 
 
-### 8. RAG_Agent
+### 8. BM25
 
 1. `酒店推荐-BM25-TF-IDF`
   - 读 `Seattle_Hotels.csv`（152 家西雅图酒店）
   - 先统计描述里的 Top20 三字词并画条形图，再清洗文本
   - 用 `TfidfVectorizer`（1–3 gram）提取特征，`linear_kernel` 算余弦相似度
   - 按酒店名推荐 Top10，示例是机场希尔顿和 Bacon Mansion
-  - 入口：`python 8-RAG_Agent/酒店推荐-BM25-TF-IDF/酒店推荐.py`。路径按脚本所在目录解析，从仓库根目录启动即可
+  - 入口：`python 8-BM25/1-酒店推荐-BM25-TF-IDF/酒店推荐.py`。路径按脚本所在目录解析，从仓库根目录启动即可
   - 依赖见该目录 `requirements.txt`（pandas、scikit-learn、matplotlib）
-2. `西游记_word2vec`
-  - 三份脚本顶部用 `BOOK` 选语料，默认 `"西游记"`。改成 `"三国演义"` 后，分词、训练、加载都走对应目录
-  - `step1_word_seg.py`：jieba 对 `{BOOK}/source` 分词，空格拼接后写到 `{BOOK}/segment`
-  - `step2_word_similarity.py`：用分词结果训练两套 Word2Vec。第一套保存 `{BOOK}/model/word2Vec_1.model`，第二套由 `model2.save` 保存 `{BOOK}/model/word2Vec_2.model`，并打印「孙悟空」和相关人物的相似度
-  - `step3_use_model.py`：加载 `{BOOK}/model/word2Vec_2.model`。默认算「孙悟空」和「菩提」的相似度，并做 `唐僧 + 孙悟空 - 猪八戒`。三国演义的查询（曹操、刘备、张飞）写在注释里
-  - 模型目录和 `*.md` 已在 `.gitignore` 中，克隆后需要自己跑 step1、step2 生成分词结果和模型
-  - 查询用的词必须和分词结果一致。jieba 把「金角大王」切成了「金角」和「大王」
-  - 依赖见该目录 `requirements.txt`（jieba、gensim）。本机是 Python 3.13 时安装 `gensim==4.4.0`，`4.3.3` 没有对应的安装包
 
 
+### 9. Embedding
+
+1. `向量数据库`
+  - 从 `8-RAG_Agent/2-向量数据库` 迁到 `9-Embedding/1-向量数据库`
+  - `生成faiss索引.py`：用百炼 `text-embedding-v4`（1024 维）把四条迪士尼说明写成最简 FAISS 索引
+  - `embedding-faiss-元数据.py`：`IndexIDMap` 写入自定义 ID，把索引、元数据和配置保存到 `D:\faiss\vector_db`。Windows 上 `faiss.write_index` 使用纯英文路径
+  - 查询「迪士尼门票的退款流程」，按 ID 回查正文和 metadata
+  - 需要 `DASHSCOPE_API_KEY`
+2. `BGE-m3`
+  - `modelscope` 把 `BAAI/bge-m3` 下载到 `D:/models`
+  - `BGEM3FlagModel(..., use_fp16=True)` 在本地编码，取 `dense_vecs`
+  - `embeddings_1 @ embeddings_2.T` 得到余弦相似度
+  - 入口：`python 9-Embedding/2-BGE-m3/本地部署bge-m3模型并使用.py`
+  - 使用本地模型，不调用百炼
+
+
+### 10. RAG_Agent
+
+1. `基础RAG_Agent(pdf-Faiss)`
+  - 读同目录《浦发上海浦东发展银行西安分行个金客户经理考核办法.pdf》。路径按脚本所在目录解析，从仓库根目录启动即可
+  - `RecursiveCharacterTextSplitter` 切分，`DashScopeEmbeddings`（`text-embedding-v1`）写入 FAISS，索引在 `D:\faiss\pdf_agent_vector_db`
+  - 查询时 `similarity_search_with_score` 取最相近的 10 块，用 `Tongyi`（`deepseek-v4-flash`）回答，并打印页码和 L2 距离，距离越小越近
+  - 入口：`python "10-RAG_Agent/1-基础RAG_Agent(pdf-Faiss)/chatpdf-faiss.py"`。建库那一行默认注释掉，已有索引时直接查询
+  - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`langchain_community`、`langchain_text_splitters`、`PyPDF2`）
 
 ### 88. Tools
 
@@ -229,6 +250,14 @@ $env:DAYTONA_API_KEY="你的key"
   - 从仓库根目录 `gui-plus/` 迁到 `88-Tools/gui-plus/`
   - 读本地截图，让视觉模型返回下一步 GUI 操作
   - 需要 `DASHSCOPE_API_KEY`
+4. `西游记_word2vec`
+  - 三份脚本顶部用 `BOOK` 选语料，默认 `"西游记"`。改成 `"三国演义"` 后，分词、训练、加载都走对应目录
+  - `step1_word_seg.py`：jieba 对 `{BOOK}/source` 分词，空格拼接后写到 `{BOOK}/segment`
+  - `step2_word_similarity.py`：用分词结果训练两套 Word2Vec。第一套保存 `{BOOK}/model/word2Vec_1.model`，第二套由 `model2.save` 保存 `{BOOK}/model/word2Vec_2.model`，并打印「孙悟空」和相关人物的相似度
+  - `step3_use_model.py`：加载 `{BOOK}/model/word2Vec_2.model`。默认算「孙悟空」和「菩提」的相似度，并做 `唐僧 + 孙悟空 - 猪八戒`。三国演义的查询（曹操、刘备、张飞）写在注释里
+  - 模型目录和 `*.md` 已在 `.gitignore` 中，克隆后需要自己跑 step1、step2 生成分词结果和模型
+  - 查询用的词必须和分词结果一致。jieba 把「金角大王」切成了「金角」和「大王」
+  - 依赖见该目录 `requirements.txt`（jieba、gensim）。本机是 Python 3.13 时安装 `gensim==4.4.0`，`4.3.3` 没有对应的安装包
 
 
 
@@ -276,6 +305,9 @@ $env:DAYTONA_API_KEY="你的key"
 - 同一业务场景（投顾助手）会在 LangGraph / LangSmith / Langfuse / DeepEval 中反复出现，方便横向对比「编排 → 追踪 → 评测」。
 - `ACP` 用杭州三日游团建目标，对照「主 Agent 拆板 → Codex worker 执行 → 上下文隔离 → TriggerFlow 汇总」。
 - `Memory` 用同一套亲子行程对话，对照「压缩 → 升格 → 召回 → 有/无记忆出行程」。
-- `8-RAG_Agent` 用西雅图酒店对照「词频 → TF-IDF 推荐」，用《西游记》/《三国演义》对照「分词 → Word2Vec → 加载模型算相似度」。
+- `8-BM25` 用西雅图酒店对照「词频 → TF-IDF 推荐」。
+- `9-Embedding` 用百炼 `text-embedding-v4` 建带元数据的 FAISS 索引，并用本地 BGE-M3 算句向量余弦相似度。
+- `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」。
+- `88-Tools/西游记_word2vec` 用《西游记》/《三国演义》对照「分词 → Word2Vec → 加载模型算相似度」。
 - Windows 环境；运行前确认已激活虚拟环境并设置好对应 API Key。
 
