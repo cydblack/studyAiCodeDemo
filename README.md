@@ -27,6 +27,8 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 |     |                 | `网络故障诊断Agent`         | 模拟 ping / DNS / 网卡 / 日志诊断    |
 |     |                 | `LCEL_demo`           | LCEL 翻译 → 分析 → 回译，流式输出       |
 |     |                 | `LCEL_工具链组合形式-不使用大模型` | 工具顺序由代码写死，对照上一则              |
+| 7   | prompt          | `意图识别+Query改写`        | 识别问句类型，改写成可单独检索的问题           |
+|     |                 | `带联网搜索的Query改写`       | 判断是否需要联网，并改写成搜索查询            |
 | 8   | BM25            | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10 |
 | 9   | Embedding       | `向量数据库`               | 百炼 `text-embedding-v4` 建 FAISS 索引，用自定义 ID 回查元数据 |
 |     |                 | `BGE-m3`              | 本地下载 BGE-M3，计算句向量余弦相似度        |
@@ -84,6 +86,7 @@ python -m venv .venv
 | `MCP`（本地 MCP）       | `DASHSCOPE_API_KEY`                                                                             |
 | `MCP`（Tavily MCP）   | `DASHSCOPE_API_KEY` + `TAVILY_API_KEY`                                                          |
 | `LangChain`         | `DASHSCOPE_API_KEY`；搜索 Agent 再加 `SERPAPI_API_KEY`                                               |
+| `7.prompt`          | `DASHSCOPE_API_KEY`                                                                             |
 | `ACP`               | `DEEPSEEK_API_KEY`（拆任务板 / 主循环）；Codex ACP worker 需要本机 Node                                       |
 | `LangGraph`         | `DASHSCOPE_API_KEY`                                                                             |
 | `LangSmith`         | `DASHSCOPE_API_KEY` + `LANGSMITH_API_KEY` + `LANGCHAIN_TRACING_V2=true`（可选 `LANGCHAIN_PROJECT`） |
@@ -202,6 +205,24 @@ $env:DAYTONA_API_KEY="你的key"
 
 
 
+### 7. prompt
+
+1. `意图识别+Query改写`
+  - 用百炼 `deepseek-v4-flash` 做 Query 改写。先判断问句类型，再按类型改写
+  - 五种类型：上下文依赖（补上对话里没写进当前问句的信息）、对比（写明比较对象）、模糊指代（把「它」「都」换成具体对象）、多意图（拆成 JSON 数组）、反问（改成中立、可检索的问句）
+  - 同时命中多意图和模糊指代时，按多意图处理
+  - `main` 用同一段工作经历对话跑五个例子：还在别的公司就职过吗、哪家公司待得更久、薪资都是多少、带人和绩效、是不是只是参与而非主 R
+  - 入口：`python 7.prompt/1-意图识别+Query改写.py`
+  - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`）
+2. `带联网搜索的Query改写`
+  - 用百炼 `deepseek-v4-flash` 判断问句要不要联网。需要时再改写成搜索查询，并给出搜索策略。脚本本身不发起搜索
+  - 需要联网的情况包括时效、价格、营业、活动、天气、交通、预订、实时状态
+  - 改写结果包含搜索词、关键词、搜索意图和建议来源。策略包含主要词、扩展词、平台和时间范围，时间按运行当天计算
+  - `main` 跑三个例子：上海迪士尼今天是否开放、下周六门票价格和预订、我叫什么名字（不需要联网）
+  - 入口：`python 7.prompt/2-带联网搜索的Query改写.py`
+  - 需要 `DASHSCOPE_API_KEY`。依赖与上一则相同
+
+
 ### 8. BM25
 
 1. `酒店推荐-BM25-TF-IDF`
@@ -305,6 +326,7 @@ $env:DAYTONA_API_KEY="你的key"
 - 同一业务场景（投顾助手）会在 LangGraph / LangSmith / Langfuse / DeepEval 中反复出现，方便横向对比「编排 → 追踪 → 评测」。
 - `ACP` 用杭州三日游团建目标，对照「主 Agent 拆板 → Codex worker 执行 → 上下文隔离 → TriggerFlow 汇总」。
 - `Memory` 用同一套亲子行程对话，对照「压缩 → 升格 → 召回 → 有/无记忆出行程」。
+- `7.prompt` 用同一段工作经历对话，对照五种问句「识别类型 → 改写成可单独检索的问题」；再用迪士尼问句对照「是否需要联网 → 改写成搜索查询」。
 - `8-BM25` 用西雅图酒店对照「词频 → TF-IDF 推荐」。
 - `9-Embedding` 用百炼 `text-embedding-v4` 建带元数据的 FAISS 索引，并用本地 BGE-M3 算句向量余弦相似度。
 - `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」。
