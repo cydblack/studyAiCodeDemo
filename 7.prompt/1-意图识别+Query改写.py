@@ -2,22 +2,28 @@ import dashscope
 import os
 import json
 from http import HTTPStatus
+from dashscope import MultiModalConversation
+
+dashscope.base_http_api_url = (
+    "https://ws-q8b7jquakv6ldzfd.cn-beijing.maas.aliyuncs.com/api/v1"
+)
 
 
-MODEL = "deepseek-v4-flash"
 API_KEY = os.getenv("DASHSCOPE_API_KEY")
+MODEL = "deepseek-v4.1-flash"
 
 
 # 基于 prompt 生成文本
 def get_completion(prompt):
     messages = [{"role": "user", "content": prompt}]
-    dashscope.api_key = API_KEY
-    response = dashscope.Generation.call(
+    response = MultiModalConversation.call(
+        api_key=API_KEY,
         model=MODEL,
         messages=messages,
         result_format="message",
         temperature=0,
     )
+
     # 失败时 output 可能为 None（如未配置 API Key、HTTP 非 200），需先校验再取 choices
     if response.status_code != HTTPStatus.OK:
         raise RuntimeError(

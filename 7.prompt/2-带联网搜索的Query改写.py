@@ -7,16 +7,20 @@ import re
 from http import HTTPStatus
 from datetime import datetime
 
+dashscope.base_http_api_url = (
+    "https://ws-q8b7jquakv6ldzfd.cn-beijing.maas.aliyuncs.com/api/v1"
+)
+
 API_KEY = os.getenv("DASHSCOPE_API_KEY")
-MODEL = "deepseek-v4-flash"
+MODEL = "deepseek-v4.1-flash"
 
 
 # 基于 prompt 生成文本
 def get_completion(prompt, model=MODEL):
     messages = [{"role": "user", "content": prompt}]
-    dashscope.api_key = API_KEY
-    response = dashscope.Generation.call(
-        model=model,
+    response = dashscope.MultiModalConversation.call(
+        api_key=API_KEY,
+        model=MODEL,
         messages=messages,
         result_format="message",
         temperature=0,
