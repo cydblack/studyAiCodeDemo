@@ -32,7 +32,15 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 | 8   | BM25            | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10 |
 | 9   | Embedding       | `向量数据库`               | 百炼 `text-embedding-v4` 建 FAISS 索引，用自定义 ID 回查元数据 |
 |     |                 | `BGE-m3`              | 本地下载 BGE-M3，计算句向量余弦相似度        |
+|     |                 | `文本Embedding`         | `text-embedding-v4` 对一句话做向量     |
+|     |                 | `图片Embedding`         | `tongyi-embedding-vision-plus` 对海报做向量 |
+|     |                 | `视频Embedding`         | 同一模型对同目录 `car.mp4` 做向量        |
 | 10  | RAG_Agent       | `基础RAG_Agent(pdf-Faiss)` | 读考核办法 PDF，切分后用 FAISS 做问答     |
+| 12  | 多模态             | `Gemini-文字输出`          | Gemini 纯文字问答                  |
+|     |                 | `Gemini-图像理解`          | 读同目录 `car.jpg`，解释照片           |
+|     |                 | `Gemini-视频理解`          | 上传 `car.mp4`，等转码后描述视频          |
+|     |                 | `DeepSeek-图像理解`        | 本地图片转 data URL，DeepSeek 解释照片  |
+|     |                 | `DeepSeek-视频理解`        | OpenCV 抽帧后按图片送给 DeepSeek      |
 | 88  | Tools           | `Jieba分词`             | 对字符串列表做中文分词                  |
 |     |                 | `特征词获取`               | 酒店描述 n-gram 词频 TopK          |
 |     |                 | `gui-plus`            | 截图转 GUI 操作（从仓库根目录迁入）         |
@@ -72,6 +80,7 @@ python -m venv .venv
 | `OPENAI_API_KEY`       | 跑 DeepEval 时必需           | DeepEval 评审模型（如 gpt-4o-mini）                                          |
 | `TAVILY_API_KEY`       | 跑 Tavily MCP 时必需         | `MCP` 远程搜索 Agent                                                      |
 | `DAYTONA_API_KEY`      | 跑 OpenManus 沙箱时可选        | `OpenManus_cyd` Daytona 云沙箱；`config.toml` 中可留空由环境变量注入                 |
+| `GEMINI_API_KEY`       | 跑 Gemini 多模态时必需          | `12-多模态` 的 Gemini 文字、图像、视频理解                                        |
 
 
 
@@ -87,6 +96,7 @@ python -m venv .venv
 | `MCP`（Tavily MCP）   | `DASHSCOPE_API_KEY` + `TAVILY_API_KEY`                                                          |
 | `LangChain`         | `DASHSCOPE_API_KEY`；搜索 Agent 再加 `SERPAPI_API_KEY`                                               |
 | `7.prompt`          | `DASHSCOPE_API_KEY`                                                                             |
+| `12-多模态`            | Gemini 脚本需要 `GEMINI_API_KEY`；DeepSeek 脚本需要 `DASHSCOPE_API_KEY`                                |
 | `ACP`               | `DEEPSEEK_API_KEY`（拆任务板 / 主循环）；Codex ACP worker 需要本机 Node                                       |
 | `LangGraph`         | `DASHSCOPE_API_KEY`                                                                             |
 | `LangSmith`         | `DASHSCOPE_API_KEY` + `LANGSMITH_API_KEY` + `LANGCHAIN_TRACING_V2=true`（可选 `LANGCHAIN_PROJECT`） |
@@ -97,7 +107,7 @@ python -m venv .venv
 | `88-Tools/gui-plus` | `DASHSCOPE_API_KEY`                                                                             |
 | `Memory`            | `DASHSCOPE_API_KEY`                                                                             |
 | `8-BM25`            | 不需要 API Key                                                                                     |
-| `9-Embedding`       | `向量数据库` 需要 `DASHSCOPE_API_KEY`；`BGE-m3` 使用本地模型，不需要百炼 Key                                      |
+| `9-Embedding`       | `向量数据库`、`文本Embedding`、`图片Embedding`、`视频Embedding` 需要 `DASHSCOPE_API_KEY`；`BGE-m3` 使用本地模型，不需要百炼 Key |
 | `10-RAG_Agent`      | `DASHSCOPE_API_KEY`                                                                             |
 | `88-Tools`          | `gui-plus` 需要 `DASHSCOPE_API_KEY`；分词、特征词获取和 Word2Vec 不需要                                         |
 
@@ -135,6 +145,9 @@ $env:TAVILY_API_KEY="你的key"
 
 # OpenManus Daytona 沙箱（OpenManus_cyd，可选）
 $env:DAYTONA_API_KEY="你的key"
+
+# Gemini（12-多模态）
+$env:GEMINI_API_KEY="你的key"
 ```
 
 
@@ -207,15 +220,17 @@ $env:DAYTONA_API_KEY="你的key"
 
 ### 7. prompt
 
+两个脚本都用 `deepseek-v4.1-flash`，通过 `dashscope.MultiModalConversation.call` 调用。请求地址写在脚本里，是阿里云 MaaS `https://ws-q8b7jquakv6ldzfd.cn-beijing.maas.aliyuncs.com/api/v1`。
+
 1. `意图识别+Query改写`
-  - 用百炼 `deepseek-v4-flash` 做 Query 改写。先判断问句类型，再按类型改写
+  - 先判断问句类型，再按类型改写
   - 五种类型：上下文依赖（补上对话里没写进当前问句的信息）、对比（写明比较对象）、模糊指代（把「它」「都」换成具体对象）、多意图（拆成 JSON 数组）、反问（改成中立、可检索的问句）
   - 同时命中多意图和模糊指代时，按多意图处理
   - `main` 用同一段工作经历对话跑五个例子：还在别的公司就职过吗、哪家公司待得更久、薪资都是多少、带人和绩效、是不是只是参与而非主 R
   - 入口：`python 7.prompt/1-意图识别+Query改写.py`
   - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`）
 2. `带联网搜索的Query改写`
-  - 用百炼 `deepseek-v4-flash` 判断问句要不要联网。需要时再改写成搜索查询，并给出搜索策略。脚本本身不发起搜索
+  - 判断问句要不要联网。需要时再改写成搜索查询，并给出搜索策略。脚本本身不发起搜索
   - 需要联网的情况包括时效、价格、营业、活动、天气、交通、预订、实时状态
   - 改写结果包含搜索词、关键词、搜索意图和建议来源。策略包含主要词、扩展词、平台和时间范围，时间按运行当天计算
   - `main` 跑三个例子：上海迪士尼今天是否开放、下周六门票价格和预订、我叫什么名字（不需要联网）
@@ -248,6 +263,20 @@ $env:DAYTONA_API_KEY="你的key"
   - `embeddings_1 @ embeddings_2.T` 得到余弦相似度
   - 入口：`python 9-Embedding/2-BGE-m3/本地部署bge-m3模型并使用.py`
   - 使用本地模型，不调用百炼
+3. `文本Embedding`
+  - `dashscope.TextEmbedding.call`，模型 `text-embedding-v4`，`input` 直接传字符串「我叫陈永达」
+  - 入口：`python 9-Embedding/3-文本Embedding/text_embedding.py`
+  - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`）
+4. `图片Embedding`
+  - `dashscope.MultiModalEmbedding.call`，模型 `tongyi-embedding-vision-plus`
+  - 读同目录 `海报.jpg`，转成 data URL 后放进 `input`
+  - 路径按脚本所在目录解析，从仓库根目录启动即可
+  - 入口：`python 9-Embedding/4-图片Embedding/image_embedding.py`
+  - 需要 `DASHSCOPE_API_KEY`
+5. `视频Embedding`
+  - 同一模型 `tongyi-embedding-vision-plus`，把同目录 `car.mp4` 的路径放进 `input`
+  - 入口：`python 9-Embedding/5-视频Embedding/video_embedding.py`
+  - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`）
 
 
 ### 10. RAG_Agent
@@ -258,6 +287,36 @@ $env:DAYTONA_API_KEY="你的key"
   - 查询时 `similarity_search_with_score` 取最相近的 10 块，用 `Tongyi`（`deepseek-v4-flash`）回答，并打印页码和 L2 距离，距离越小越近
   - 入口：`python "10-RAG_Agent/1-基础RAG_Agent(pdf-Faiss)/chatpdf-faiss.py"`。建库那一行默认注释掉，已有索引时直接查询
   - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`langchain_community`、`langchain_text_splitters`、`PyPDF2`）
+
+### 12. 多模态
+
+同一段汽车剐蹭素材 `car.jpg` / `car.mp4`，对照 Gemini 直接看图、看视频，以及 DeepSeek 看图、抽帧后再看。
+
+1. `Gemini-文字输出`
+  - `google.genai` 调 `gemini-3.8-flash`，只发一段中文问题
+  - 入口：`python "12-多模态/Gemini-文字输出.py"`
+  - 需要 `GEMINI_API_KEY`
+2. `Gemini-图像理解`
+  - 读同目录 `car.jpg`，`contents` 里同时放图片对象和「帮我解释下这张照片」
+  - 路径按脚本所在目录解析，从仓库根目录启动即可
+  - 入口：`python "12-多模态/Gemini-图像理解.py"`
+  - 需要 `GEMINI_API_KEY`
+3. `Gemini-视频理解`
+  - `client.files.upload` 上传 `car.mp4`，轮询到转码完成后再放进 `contents`
+  - 视频路径按当前工作目录解析，先 `cd` 到 `12-多模态` 再运行
+  - 入口：`python Gemini-视频理解.py`
+  - 需要 `GEMINI_API_KEY`
+4. `DeepSeek-图像理解`
+  - 模型 `deepseek-v4.1-flash`，走阿里云 MaaS 的 OpenAI 兼容地址
+  - 把本地 `car.jpg` 转成 data URL，和文字一起放进 `content`
+  - 路径按脚本所在目录解析，从仓库根目录启动即可
+  - 入口：`python "12-多模态/DeepSeek-图像理解.py"`
+  - 需要 `DASHSCOPE_API_KEY`
+5. `DeepSeek-视频理解`
+  - DeepSeek 只收图片。用 OpenCV 从 `car.mp4` 均匀抽 6 帧，再按图片理解送给模型
+  - 路径按脚本所在目录解析，从仓库根目录启动即可
+  - 入口：`python "12-多模态/DeepSeek-视频理解.py"`
+  - 需要 `DASHSCOPE_API_KEY`。该目录 `requirements.txt` 有 `Pillow`、`protobuf`、`opencv-python`。Gemini 脚本另需 `google-genai`，DeepSeek 脚本另需 `openai`
 
 ### 88. Tools
 
@@ -328,8 +387,9 @@ $env:DAYTONA_API_KEY="你的key"
 - `Memory` 用同一套亲子行程对话，对照「压缩 → 升格 → 召回 → 有/无记忆出行程」。
 - `7.prompt` 用同一段工作经历对话，对照五种问句「识别类型 → 改写成可单独检索的问题」；再用迪士尼问句对照「是否需要联网 → 改写成搜索查询」。
 - `8-BM25` 用西雅图酒店对照「词频 → TF-IDF 推荐」。
-- `9-Embedding` 用百炼 `text-embedding-v4` 建带元数据的 FAISS 索引，并用本地 BGE-M3 算句向量余弦相似度。
+- `9-Embedding` 用百炼 `text-embedding-v4` 建带元数据的 FAISS 索引，并用本地 BGE-M3 算句向量余弦相似度。文本、图片、视频三条 Demo 分别走 `TextEmbedding` 和 `tongyi-embedding-vision-plus`。
 - `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」。
+- `12-多模态` 用同一段汽车剐蹭素材对照「Gemini 直接看图 / 看视频」和「DeepSeek 看图 / 抽帧后再看」。
 - `88-Tools/西游记_word2vec` 用《西游记》/《三国演义》对照「分词 → Word2Vec → 加载模型算相似度」。
 - Windows 环境；运行前确认已激活虚拟环境并设置好对应 API Key。
 
