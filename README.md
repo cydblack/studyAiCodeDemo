@@ -35,7 +35,8 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 |     |                 | `文本Embedding`         | `text-embedding-v4` 对一句话做向量     |
 |     |                 | `图片Embedding`         | `tongyi-embedding-vision-plus` 对海报做向量 |
 |     |                 | `视频Embedding`         | 同一模型对同目录 `car.mp4` 做向量        |
-| 10  | RAG_Agent       | `基础RAG_Agent(pdf-Faiss)` | 读考核办法 PDF，切分后用 FAISS 做问答     |
+| 10  | RAG_Agent       | `银行PDF_RAG_Agent`        | 读考核办法 PDF，切分后用 FAISS 做问答     |
+|     |                 | `迪士尼RAG_Agent`          | 门票文档和海报建多模态索引，再按问句检索回答   |
 | 12  | 多模态             | `Gemini-文字输出`          | Gemini 纯文字问答                  |
 |     |                 | `Gemini-图像理解`          | 读同目录 `car.jpg`，解释照片           |
 |     |                 | `Gemini-视频理解`          | 上传 `car.mp4`，等转码后描述视频          |
@@ -281,12 +282,22 @@ $env:GEMINI_API_KEY="你的key"
 
 ### 10. RAG_Agent
 
-1. `基础RAG_Agent(pdf-Faiss)`
+1. `银行PDF_RAG_Agent`
+  - 目录由 `1-基础RAG_Agent(pdf-Faiss)` 改名为 `1-银行PDF_RAG_Agent`
   - 读同目录《浦发上海浦东发展银行西安分行个金客户经理考核办法.pdf》。路径按脚本所在目录解析，从仓库根目录启动即可
   - `RecursiveCharacterTextSplitter` 切分，`DashScopeEmbeddings`（`text-embedding-v1`）写入 FAISS，索引在 `D:\faiss\pdf_agent_vector_db`
   - 查询时 `similarity_search_with_score` 取最相近的 10 块，用 `Tongyi`（`deepseek-v4-flash`）回答，并打印页码和 L2 距离，距离越小越近
-  - 入口：`python "10-RAG_Agent/1-基础RAG_Agent(pdf-Faiss)/chatpdf-faiss.py"`。建库那一行默认注释掉，已有索引时直接查询
+  - 入口：`python "10-RAG_Agent/1-银行PDF_RAG_Agent/chatpdf-faiss.py"`。建库那一行默认注释掉，已有索引时直接查询
   - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`langchain_community`、`langchain_text_splitters`、`PyPDF2`）
+2. `迪士尼RAG_Agent`
+  - 建库读 `disney_knowledge_base`：4 份 docx（门票规则、老人票价、游玩攻略、酒店会员）和 2 张海报。按 500 字、重叠 50 字切分
+  - 文本和图片都用 `tongyi-embedding-vision-plus` 的 `MultiModalEmbedding`。索引和元数据写到 `D:\faiss\disney_rag`，因为 Windows 上 `faiss.write_index` 打不开中文路径
+  - `迪士尼知识库（全）` 在 `.gitignore` 里，建库脚本不读这个目录
+  - 查询加载同一份索引，打印全部条目的相似度。取最相近的 3 段文本交给 `qwen-flash` 回答。问句里出现海报、图片等词时，再取距离小于 3 的最相近图片，把路径附在答案后面
+  - `main` 跑三问：门票退款流程、万圣节活动海报、聚在一起说奇妙的海报
+  - 先建库：`python "10-RAG_Agent/2-迪士尼RAG_Agent/1-disney_build_index.py"`
+  - 再查询：`python "10-RAG_Agent/2-迪士尼RAG_Agent/2-disney_query.py"`
+  - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`、`faiss_cpu`、`openai`、`python_docx`）
 
 ### 12. 多模态
 
@@ -388,7 +399,7 @@ $env:GEMINI_API_KEY="你的key"
 - `7.prompt` 用同一段工作经历对话，对照五种问句「识别类型 → 改写成可单独检索的问题」；再用迪士尼问句对照「是否需要联网 → 改写成搜索查询」。
 - `8-BM25` 用西雅图酒店对照「词频 → TF-IDF 推荐」。
 - `9-Embedding` 用百炼 `text-embedding-v4` 建带元数据的 FAISS 索引，并用本地 BGE-M3 算句向量余弦相似度。文本、图片、视频三条 Demo 分别走 `TextEmbedding` 和 `tongyi-embedding-vision-plus`。
-- `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」。
+- `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」，并用迪士尼门票文档和海报对照「多模态嵌入 → 检索 → qwen-flash 回答」。
 - `12-多模态` 用同一段汽车剐蹭素材对照「Gemini 直接看图 / 看视频」和「DeepSeek 看图 / 抽帧后再看」。
 - `88-Tools/西游记_word2vec` 用《西游记》/《三国演义》对照「分词 → Word2Vec → 加载模型算相似度」。
 - Windows 环境；运行前确认已激活虚拟环境并设置好对应 API Key。
