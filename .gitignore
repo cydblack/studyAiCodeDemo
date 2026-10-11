@@ -39,7 +39,9 @@ htmlcov/
 # 系统文件
 .DS_Store
 Thumbs.db
+test.py
 
 **/.ipynb_checkpoints/
 88-Tools/西游记_word2vec/*/model/
 88-Tools/西游记_word2vec/*.md
+10-RAG_Agent/2-迪士尼RAG_Agent/迪斯尼知识库（全）/
