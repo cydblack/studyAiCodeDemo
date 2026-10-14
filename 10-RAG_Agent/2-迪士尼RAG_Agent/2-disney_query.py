@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-迪士尼RAG助手 V2 - 查询处理
+迪士尼RAG助手 - 查询处理
 
 功能：加载索引，处理用户query，打印相似度排名，支持图片/视频关键词检测
 """
@@ -192,6 +192,7 @@ def rag_ask(query, index, metadata, k=3):
 
 
 if __name__ == "__main__":
+
     index, metadata = load_index()
 
     print("\n" + "=" * 60)
@@ -203,5 +204,5 @@ if __name__ == "__main__":
     rag_ask("最近万圣节的活动海报是什么", index, metadata, k=3)
 
     print("\n" + "=" * 60)
-    print("测试4: 图片查询 - 聚在一起")
+    print("测试3: 图片查询 - 聚在一起")
     rag_ask("聚在一起说奇妙的海报", index, metadata, k=3)
