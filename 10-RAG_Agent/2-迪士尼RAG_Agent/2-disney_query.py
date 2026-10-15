@@ -108,12 +108,12 @@ def search_with_details(query, index, metadata):
 
 
 def rag_ask(query, index, metadata, k=3):
-    """RAG问答，支持图片/视频关键词检测"""
-    results = search_with_details(query, index, metadata)
-
     # 检测媒体意图
     want_image, want_video = detect_media_intent(query)
     print(f"\n意图检测: 需要图片={want_image}, 需要视频={want_video}")
+
+    """RAG问答，支持图片/视频关键词检测"""
+    results = search_with_details(query, index, metadata)
 
     # 取top-k文本结果
     top_results = [r for r in results if r["metadata"]["type"] == "text"][:k]
