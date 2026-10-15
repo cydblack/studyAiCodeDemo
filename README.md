@@ -37,6 +37,7 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 |     |                 | `视频Embedding`         | 同一模型对同目录 `car.mp4` 做向量        |
 | 10  | RAG_Agent       | `银行PDF_RAG_Agent`        | 读考核办法 PDF，切分后用 FAISS 做问答     |
 |     |                 | `迪士尼RAG_Agent`          | 门票文档和海报建多模态索引，再按问句检索回答   |
+|     |                 | `切片策略`                 | 同一段迪士尼门票文本，对照固定长度、句子边界、LLM、滑动窗口和自适应切片 |
 | 12  | 多模态             | `Gemini-文字输出`          | Gemini 纯文字问答                  |
 |     |                 | `Gemini-图像理解`          | 读同目录 `car.jpg`，解释照片           |
 |     |                 | `Gemini-视频理解`          | 上传 `car.mp4`，等转码后描述视频          |
@@ -298,6 +299,21 @@ $env:GEMINI_API_KEY="你的key"
   - 先建库：`python "10-RAG_Agent/2-迪士尼RAG_Agent/1-disney_build_index.py"`
   - 再查询：`python "10-RAG_Agent/2-迪士尼RAG_Agent/2-disney_query.py"`
   - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`、`faiss_cpu`、`openai`、`python_docx`）
+3. `切片策略`
+  - 同一段迪士尼门票文本，分别跑手搓和 LangChain 的固定长度、句子边界，以及 LLM、层次、滑动窗口、自适应切片
+  - 固定长度手搓按字符窗口推进，`chunk_size=200`、`overlap=50`，只在窗口末尾回看句号。下一窗起点是 `end - overlap`，文本已经切完时仍可能再切出一块很短的尾巴
+  - 固定长度 LangChain 用 `RecursiveCharacterTextSplitter`。分隔符从 `。！？.!?` 开始，末尾有空字符串，超长句子会按字符切开。`chunk_overlap=50` 只保留能放进 50 字的完整句子
+  - 句子边界手搓用正则 `[.!?。！？\n]` 分句，丢掉标点后用空格接上，装到 `max_chunk_size=300`，块与块之间不重叠
+  - 句子边界 LangChain 仍用 `RecursiveCharacterTextSplitter`，`chunk_overlap=0`，句号留在句尾。分隔符列表没有空字符串，超长句子保持完整。文本里有 `。` 时先按句号切，换行不会单独成为切分点
+  - LLM 语义切片的 `MODEL` 是 `deepseek-v4.1-flash`，`API_KEY` 读 `DASHSCOPE_API_KEY`，仍走百炼 `compatible-mode/v1`。没设密钥、调用失败或 JSON 解析失败时，改用句子边界手搓的切分
+  - 单份脚本的入口：
+    - `python "10-RAG_Agent/3-切片策略/1-固定长度切片-手搓.py"`
+    - `python "10-RAG_Agent/3-切片策略/1-固定长度切片-LangChain.py"`
+    - `python "10-RAG_Agent/3-切片策略/2-句子边界切片-手搓.py"`
+    - `python "10-RAG_Agent/3-切片策略/2-句子边界切片-LangChain.py"`
+    - `python "10-RAG_Agent/3-切片策略/3-LLM语义切片.py"`
+  - 对比脚本把目标长度统一成 200，一次跑手搓固定长度、LangChain 固定长度、句子边界、LLM、滑动窗口、自适应和智能自适应，最后打印切片数、平均长度、长度方差和推荐度。入口：`python "10-RAG_Agent/3-切片策略/切片策略对比测试.py"`
+  - LLM 和对比脚本需要 `DASHSCOPE_API_KEY`。该目录 `requirements.txt` 只有 `openai`；两份 LangChain 脚本还需要 `langchain_text_splitters`
 
 ### 12. 多模态
 
@@ -399,7 +415,7 @@ $env:GEMINI_API_KEY="你的key"
 - `7.prompt` 用同一段工作经历对话，对照五种问句「识别类型 → 改写成可单独检索的问题」；再用迪士尼问句对照「是否需要联网 → 改写成搜索查询」。
 - `8-BM25` 用西雅图酒店对照「词频 → TF-IDF 推荐」。
 - `9-Embedding` 用百炼 `text-embedding-v4` 建带元数据的 FAISS 索引，并用本地 BGE-M3 算句向量余弦相似度。文本、图片、视频三条 Demo 分别走 `TextEmbedding` 和 `tongyi-embedding-vision-plus`。
-- `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」，并用迪士尼门票文档和海报对照「多模态嵌入 → 检索 → qwen-flash 回答」。
+- `10-RAG_Agent` 用考核办法 PDF 对照「切分 → DashScope 嵌入 → FAISS 问答」，并用迪士尼门票文档和海报对照「多模态嵌入 → 检索 → qwen-flash 回答」。同一段迪士尼门票文本还对照固定长度、句子边界、LLM、滑动窗口和自适应切片。
 - `12-多模态` 用同一段汽车剐蹭素材对照「Gemini 直接看图 / 看视频」和「DeepSeek 看图 / 抽帧后再看」。
 - `88-Tools/西游记_word2vec` 用《西游记》/《三国演义》对照「分词 → Word2Vec → 加载模型算相似度」。
 - Windows 环境；运行前确认已激活虚拟环境并设置好对应 API Key。
