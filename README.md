@@ -7,46 +7,46 @@ Dylan 自用 AI / Agent / Demo 代码库，按照我自己的笔记顺序，按�
 与我的笔记顺序一致：
 
 
-| #   | 目录              | 文件                    | 说明                           |
-| --- | --------------- | --------------------- | ---------------------------- |
-| 1   | Agent           | `baseQwenAgent`       | 最基础的 `Qwen Agent`            |
-|     |                 | `ACP`                 | Agent Client Protocol        |
-| 2   | FunctionCalling | `门票助手1`               | 使用查 SQLite 库的 tool           |
-|     |                 | `门票助手2`               | 在 `门票助手1` 上，增加了图表信息展示        |
-| 3   | MCP             | `MCP使用-使用Tavily`      | MCP 的使用，远程 Tavily MCP        |
-|     |                 | `门票助手2`               | 本地自建 MCP 服务（txt 计数）          |
-| 4   | OpenManus       | `OpenManus_cyd`       | OpenManus 本地改版               |
-| 5   | Harness         | `Memory`              | 会话压缩、升格、召回、心跳                |
-| 6   | LangChain       | `LLMChain-参数传递`       | Prompt 填变量，直接调模型             |
-|     |                 | `LLMChain-tool使用`     | Agent + SerpAPI 网页搜索         |
-|     |                 | `LLMChain-调用Fuction`  | 搜索工具 + 自定义计算器                |
-|     |                 | `带短期记忆的LLMChain`      | 多轮对话记住上文                     |
-|     |                 | `本地知识客服`              | Agent 查本地产品/公司信息             |
-|     |                 | `ReAct私募基金问答助手`       | 带 system prompt 的规则库问答       |
-|     |                 | `工具链组合形式-由LLM自己选工具`   | 多个本地工具，模型自己选                 |
-|     |                 | `网络故障诊断Agent`         | 模拟 ping / DNS / 网卡 / 日志诊断    |
-|     |                 | `LCEL_demo`           | LCEL 翻译 → 分析 → 回译，流式输出       |
-|     |                 | `LCEL_工具链组合形式-不使用大模型` | 工具顺序由代码写死，对照上一则              |
-| 7   | prompt          | `意图识别+Query改写`        | 识别问句类型，改写成可单独检索的问题           |
-|     |                 | `带联网搜索的Query改写`       | 判断是否需要联网，并改写成搜索查询            |
-| 8   | BM25            | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10 |
+| #   | 目录              | 文件                    | 说明                                              |
+| --- | --------------- | --------------------- | ----------------------------------------------- |
+| 1   | Agent           | `baseQwenAgent`       | 最基础的 `Qwen Agent`                               |
+|     |                 | `ACP`                 | Agent Client Protocol                           |
+| 2   | FunctionCalling | `门票助手1`               | 使用查 SQLite 库的 tool                              |
+|     |                 | `门票助手2`               | 在 `门票助手1` 上，增加了图表信息展示                           |
+| 3   | MCP             | `MCP使用-使用Tavily`      | MCP 的使用，远程 Tavily MCP                           |
+|     |                 | `门票助手2`               | 本地自建 MCP 服务（txt 计数）                             |
+| 4   | OpenManus       | `OpenManus_cyd`       | OpenManus 本地改版                                  |
+| 5   | Harness         | `Memory`              | 会话压缩、升格、召回、心跳                                   |
+| 6   | LangChain       | `LLMChain-参数传递`       | Prompt 填变量，直接调模型                                |
+|     |                 | `LLMChain-tool使用`     | Agent + SerpAPI 网页搜索                            |
+|     |                 | `LLMChain-调用Fuction`  | 搜索工具 + 自定义计算器                                   |
+|     |                 | `带短期记忆的LLMChain`      | 多轮对话记住上文                                        |
+|     |                 | `本地知识客服`              | Agent 查本地产品/公司信息                                |
+|     |                 | `ReAct私募基金问答助手`       | 带 system prompt 的规则库问答                          |
+|     |                 | `工具链组合形式-由LLM自己选工具`   | 多个本地工具，模型自己选                                    |
+|     |                 | `网络故障诊断Agent`         | 模拟 ping / DNS / 网卡 / 日志诊断                       |
+|     |                 | `LCEL_demo`           | LCEL 翻译 → 分析 → 回译，流式输出                          |
+|     |                 | `LCEL_工具链组合形式-不使用大模型` | 工具顺序由代码写死，对照上一则                                 |
+| 7   | prompt          | `意图识别+Query改写`        | 识别问句类型，改写成可单独检索的问题                              |
+|     |                 | `带联网搜索的Query改写`       | 判断是否需要联网，并改写成搜索查询                               |
+| 8   | BM25            | `酒店推荐-BM25-TF-IDF`    | 西雅图酒店描述，TF-IDF 余弦相似度推荐 Top10                    |
 | 9   | Embedding       | `向量数据库`               | 百炼 `text-embedding-v4` 建 FAISS 索引，用自定义 ID 回查元数据 |
-|     |                 | `BGE-m3`              | 本地下载 BGE-M3，计算句向量余弦相似度        |
-|     |                 | `文本Embedding`         | `text-embedding-v4` 对一句话做向量     |
-|     |                 | `图片Embedding`         | `tongyi-embedding-vision-plus` 对海报做向量 |
-|     |                 | `视频Embedding`         | 同一模型对同目录 `car.mp4` 做向量        |
-| 10  | RAG_Agent       | `银行PDF_RAG_Agent`        | 读考核办法 PDF，切分后用 FAISS 做问答     |
-|     |                 | `迪士尼RAG_Agent`          | 门票文档和海报建多模态索引，再按问句检索回答   |
-|     |                 | `切片策略`                 | 同一段迪士尼门票文本，对照固定长度、句子边界、LLM、滑动窗口和自适应切片 |
-| 12  | 多模态             | `Gemini-文字输出`          | Gemini 纯文字问答                  |
-|     |                 | `Gemini-图像理解`          | 读同目录 `car.jpg`，解释照片           |
-|     |                 | `Gemini-视频理解`          | 上传 `car.mp4`，等转码后描述视频          |
-|     |                 | `DeepSeek-图像理解`        | 本地图片转 data URL，DeepSeek 解释照片  |
-|     |                 | `DeepSeek-视频理解`        | OpenCV 抽帧后按图片送给 DeepSeek      |
-| 88  | Tools           | `Jieba分词`             | 对字符串列表做中文分词                  |
-|     |                 | `特征词获取`               | 酒店描述 n-gram 词频 TopK          |
-|     |                 | `gui-plus`            | 截图转 GUI 操作（从仓库根目录迁入）         |
-|     |                 | `西游记_word2vec`        | jieba 分词后训练 Word2Vec；`BOOK` 在西游记 / 三国演义间切换 |
+|     |                 | `BGE-m3`              | 本地下载 BGE-M3，计算句向量余弦相似度                          |
+|     |                 | `文本Embedding`         | `text-embedding-v4` 对一句话做向量                     |
+|     |                 | `图片Embedding`         | `tongyi-embedding-vision-plus` 对海报做向量           |
+|     |                 | `视频Embedding`         | 同一模型对同目录 `car.mp4` 做向量                          |
+| 10  | RAG_Agent       | `银行PDF_RAG_Agent`     | 读考核办法 PDF，切分后用 FAISS 做问答                        |
+|     |                 | `迪士尼RAG_Agent`        | 门票文档和海报建多模态索引，再按问句检索回答                          |
+|     |                 | `切片策略`                | 同一段迪士尼门票文本，对照固定长度、句子边界、LLM、滑动窗口和自适应切片           |
+| 12  | 多模态             | `Gemini-文字输出`         | Gemini 纯文字问答                                    |
+|     |                 | `Gemini-图像理解`         | 读同目录 `car.jpg`，解释照片                             |
+|     |                 | `Gemini-视频理解`         | 上传 `car.mp4`，等转码后描述视频                           |
+|     |                 | `DeepSeek-图像理解`       | 本地图片转 data URL，DeepSeek 解释照片                    |
+|     |                 | `DeepSeek-视频理解`       | OpenCV 抽帧后按图片送给 DeepSeek                        |
+| 88  | Tools           | `Jieba分词`             | 对字符串列表做中文分词                                     |
+|     |                 | `特征词获取`               | 酒店描述 n-gram 词频 TopK                             |
+|     |                 | `gui-plus`            | 截图转 GUI 操作（从仓库根目录迁入）                            |
+|     |                 | `西游记_word2vec`        | jieba 分词后训练 Word2Vec；`BOOK` 在西游记 / 三国演义间切换      |
 
 
 
@@ -82,7 +82,7 @@ python -m venv .venv
 | `OPENAI_API_KEY`       | 跑 DeepEval 时必需           | DeepEval 评审模型（如 gpt-4o-mini）                                          |
 | `TAVILY_API_KEY`       | 跑 Tavily MCP 时必需         | `MCP` 远程搜索 Agent                                                      |
 | `DAYTONA_API_KEY`      | 跑 OpenManus 沙箱时可选        | `OpenManus_cyd` Daytona 云沙箱；`config.toml` 中可留空由环境变量注入                 |
-| `GEMINI_API_KEY`       | 跑 Gemini 多模态时必需          | `12-多模态` 的 Gemini 文字、图像、视频理解                                        |
+| `GEMINI_API_KEY`       | 跑 Gemini 多模态时必需          | `12-多模态` 的 Gemini 文字、图像、视频理解                                          |
 
 
 
@@ -90,28 +90,28 @@ python -m venv .venv
 ### 按目录对照
 
 
-| 目录                  | 需要的环境变量                                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
-| `BaseQwenAgent`     | `DASHSCOPE_API_KEY`                                                                             |
-| `FunctionCalling`   | `DASHSCOPE_API_KEY`                                                                             |
-| `MCP`（本地 MCP）       | `DASHSCOPE_API_KEY`                                                                             |
-| `MCP`（Tavily MCP）   | `DASHSCOPE_API_KEY` + `TAVILY_API_KEY`                                                          |
-| `LangChain`         | `DASHSCOPE_API_KEY`；搜索 Agent 再加 `SERPAPI_API_KEY`                                               |
-| `7.prompt`          | `DASHSCOPE_API_KEY`                                                                             |
-| `12-多模态`            | Gemini 脚本需要 `GEMINI_API_KEY`；DeepSeek 脚本需要 `DASHSCOPE_API_KEY`                                |
-| `ACP`               | `DEEPSEEK_API_KEY`（拆任务板 / 主循环）；Codex ACP worker 需要本机 Node                                       |
-| `LangGraph`         | `DASHSCOPE_API_KEY`                                                                             |
-| `LangSmith`         | `DASHSCOPE_API_KEY` + `LANGSMITH_API_KEY` + `LANGCHAIN_TRACING_V2=true`（可选 `LANGCHAIN_PROJECT`） |
-| `OpenEvals`         | `DASHSCOPE_API_KEY`；对接 LangSmith 时再加 `LANGSMITH_API_KEY`（及 tracing 相关）                          |
-| `DeepEval`          | `DASHSCOPE_API_KEY`（被测 Agent）+ `OPENAI_API_KEY`（评审）                                             |
-| `langFuse`          | `DASHSCOPE_API_KEY` + `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY`（可选 `LANGFUSE_BASE_URL`）     |
-| `OpenManus_cyd`     | `DASHSCOPE_API_KEY`；用 Daytona 沙箱时再加 `DAYTONA_API_KEY`                                           |
-| `88-Tools/gui-plus` | `DASHSCOPE_API_KEY`                                                                             |
-| `Memory`            | `DASHSCOPE_API_KEY`                                                                             |
-| `8-BM25`            | 不需要 API Key                                                                                     |
+| 目录                  | 需要的环境变量                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| `BaseQwenAgent`     | `DASHSCOPE_API_KEY`                                                                                |
+| `FunctionCalling`   | `DASHSCOPE_API_KEY`                                                                                |
+| `MCP`（本地 MCP）       | `DASHSCOPE_API_KEY`                                                                                |
+| `MCP`（Tavily MCP）   | `DASHSCOPE_API_KEY` + `TAVILY_API_KEY`                                                             |
+| `LangChain`         | `DASHSCOPE_API_KEY`；搜索 Agent 再加 `SERPAPI_API_KEY`                                                  |
+| `7.prompt`          | `DASHSCOPE_API_KEY`                                                                                |
+| `12-多模态`            | Gemini 脚本需要 `GEMINI_API_KEY`；DeepSeek 脚本需要 `DASHSCOPE_API_KEY`                                     |
+| `ACP`               | `DEEPSEEK_API_KEY`（拆任务板 / 主循环）；Codex ACP worker 需要本机 Node                                          |
+| `LangGraph`         | `DASHSCOPE_API_KEY`                                                                                |
+| `LangSmith`         | `DASHSCOPE_API_KEY` + `LANGSMITH_API_KEY` + `LANGCHAIN_TRACING_V2=true`（可选 `LANGCHAIN_PROJECT`）    |
+| `OpenEvals`         | `DASHSCOPE_API_KEY`；对接 LangSmith 时再加 `LANGSMITH_API_KEY`（及 tracing 相关）                             |
+| `DeepEval`          | `DASHSCOPE_API_KEY`（被测 Agent）+ `OPENAI_API_KEY`（评审）                                                |
+| `langFuse`          | `DASHSCOPE_API_KEY` + `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY`（可选 `LANGFUSE_BASE_URL`）        |
+| `OpenManus_cyd`     | `DASHSCOPE_API_KEY`；用 Daytona 沙箱时再加 `DAYTONA_API_KEY`                                              |
+| `88-Tools/gui-plus` | `DASHSCOPE_API_KEY`                                                                                |
+| `Memory`            | `DASHSCOPE_API_KEY`                                                                                |
+| `8-BM25`            | 不需要 API Key                                                                                        |
 | `9-Embedding`       | `向量数据库`、`文本Embedding`、`图片Embedding`、`视频Embedding` 需要 `DASHSCOPE_API_KEY`；`BGE-m3` 使用本地模型，不需要百炼 Key |
-| `10-RAG_Agent`      | `DASHSCOPE_API_KEY`                                                                             |
-| `88-Tools`          | `gui-plus` 需要 `DASHSCOPE_API_KEY`；分词、特征词获取和 Word2Vec 不需要                                         |
+| `10-RAG_Agent`      | `DASHSCOPE_API_KEY`                                                                                |
+| `88-Tools`          | `gui-plus` 需要 `DASHSCOPE_API_KEY`；分词、特征词获取和 Word2Vec 不需要                                           |
 
 
 
@@ -240,6 +240,7 @@ $env:GEMINI_API_KEY="你的key"
   - 需要 `DASHSCOPE_API_KEY`。依赖与上一则相同
 
 
+
 ### 8. BM25
 
 1. `酒店推荐-BM25-TF-IDF`
@@ -249,6 +250,7 @@ $env:GEMINI_API_KEY="你的key"
   - 按酒店名推荐 Top10，示例是机场希尔顿和 Bacon Mansion
   - 入口：`python 8-BM25/1-酒店推荐-BM25-TF-IDF/酒店推荐.py`。路径按脚本所在目录解析，从仓库根目录启动即可
   - 依赖见该目录 `requirements.txt`（pandas、scikit-learn、matplotlib）
+
 
 
 ### 9. Embedding
@@ -281,6 +283,7 @@ $env:GEMINI_API_KEY="你的key"
   - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`）
 
 
+
 ### 10. RAG_Agent
 
 1. `银行PDF_RAG_Agent`
@@ -301,19 +304,9 @@ $env:GEMINI_API_KEY="你的key"
   - 需要 `DASHSCOPE_API_KEY`。依赖见该目录 `requirements.txt`（`dashscope`、`faiss_cpu`、`openai`、`python_docx`）
 3. `切片策略`
   - 同一段迪士尼门票文本，分别跑手搓和 LangChain 的固定长度、句子边界，以及 LLM、层次、滑动窗口、自适应切片
-  - 固定长度手搓按字符窗口推进，`chunk_size=200`、`overlap=50`，只在窗口末尾回看句号。下一窗起点是 `end - overlap`，文本已经切完时仍可能再切出一块很短的尾巴
-  - 固定长度 LangChain 用 `RecursiveCharacterTextSplitter`。分隔符从 `。！？.!?` 开始，末尾有空字符串，超长句子会按字符切开。`chunk_overlap=50` 只保留能放进 50 字的完整句子
-  - 句子边界手搓用正则 `[.!?。！？\n]` 分句，丢掉标点后用空格接上，装到 `max_chunk_size=300`，块与块之间不重叠
-  - 句子边界 LangChain 仍用 `RecursiveCharacterTextSplitter`，`chunk_overlap=0`，句号留在句尾。分隔符列表没有空字符串，超长句子保持完整。文本里有 `。` 时先按句号切，换行不会单独成为切分点
-  - LLM 语义切片的 `MODEL` 是 `deepseek-v4.1-flash`，`API_KEY` 读 `DASHSCOPE_API_KEY`，仍走百炼 `compatible-mode/v1`。没设密钥、调用失败或 JSON 解析失败时，改用句子边界手搓的切分
-  - 单份脚本的入口：
-    - `python "10-RAG_Agent/3-切片策略/1-固定长度切片-手搓.py"`
-    - `python "10-RAG_Agent/3-切片策略/1-固定长度切片-LangChain.py"`
-    - `python "10-RAG_Agent/3-切片策略/2-句子边界切片-手搓.py"`
-    - `python "10-RAG_Agent/3-切片策略/2-句子边界切片-LangChain.py"`
-    - `python "10-RAG_Agent/3-切片策略/3-LLM语义切片.py"`
   - 对比脚本把目标长度统一成 200，一次跑手搓固定长度、LangChain 固定长度、句子边界、LLM、滑动窗口、自适应和智能自适应，最后打印切片数、平均长度、长度方差和推荐度。入口：`python "10-RAG_Agent/3-切片策略/切片策略对比测试.py"`
-  - LLM 和对比脚本需要 `DASHSCOPE_API_KEY`。该目录 `requirements.txt` 只有 `openai`；两份 LangChain 脚本还需要 `langchain_text_splitters`
+
+
 
 ### 12. 多模态
 
@@ -344,6 +337,8 @@ $env:GEMINI_API_KEY="你的key"
   - 路径按脚本所在目录解析，从仓库根目录启动即可
   - 入口：`python "12-多模态/DeepSeek-视频理解.py"`
   - 需要 `DASHSCOPE_API_KEY`。该目录 `requirements.txt` 有 `Pillow`、`protobuf`、`opencv-python`。Gemini 脚本另需 `google-genai`，DeepSeek 脚本另需 `openai`
+
+
 
 ### 88. Tools
 
